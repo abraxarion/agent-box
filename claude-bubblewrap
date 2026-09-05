@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+CB_ROOT="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+# shellcheck source=lib/common.sh
+source "$CB_ROOT/lib/common.sh"
+# shellcheck source=lib/cli.sh
+source "$CB_ROOT/lib/cli.sh"
+# shellcheck source=lib/bwrap.sh
+source "$CB_ROOT/lib/bwrap.sh"
+
+cb_parse_args "$@"
+
+[[ "$(uname -s)" == Linux ]] || cb_die "Linux is required"
+cb_require_command realpath
+cb_require_command git
+cb_require_command python3
+
+CB_GIT_BIN="$(realpath "$(command -v git)")"
+CB_GIT_EXEC_PATH="$(git --exec-path)"
+
+if (( CB_GIT_SAVE )); then
+  snapshot="$($CB_ROOT/libexec/git-snapshot.py "$CB_REPO")" || cb_die "Git metadata snapshot failed; sandbox not started"
+  if [[ "$snapshot" == NO_GIT ]]; then
+    cb_info "Git snapshot: not a Git repository"
+  else
+    cb_info "Git snapshot: $snapshot"
+  fi
+else
+  cb_info "Git snapshot: disabled"
+fi
+
+if (( ! CB_DRY_RUN )); then
+  BWRAP_BIN="${CLAUDE_BUBBLEWRAP_BWRAP:-$(command -v bwrap || true)}"
+  [[ -n "$BWRAP_BIN" ]] || cb_die "required command not found: bwrap"
+  cb_check_bwrap_version "$BWRAP_BIN"
+  if (( CB_SHELL )); then
+    shell_bin="${SHELL:-/bin/bash}"
+    [[ -x "$shell_bin" ]] || cb_die "shell is not executable: $shell_bin"
+  else
+    cb_require_command claude
+  fi
+else
+  BWRAP_BIN="${CLAUDE_BUBBLEWRAP_BWRAP:-bwrap}"
+fi
+
+trap cb_cleanup_runtime_policy EXIT INT TERM
+cb_prepare_runtime_policy "$CB_ROOT/libexec/git-policy" "$CB_ROOT/libexec/git-send-pack-block"
+cb_build_bwrap_args
+
+cb_info "Repository RW: $CB_REPO"
+cb_info "Host filesystem: read-only"
+cb_info "HOME: disposable tmpfs overlay"
+if (( CB_ALLOW_GIT_PUSH )); then
+  cb_info "Git push: allowed"
+else
+  cb_info "Git push: blocked"
+fi
+if (( CB_OFFLINE )); then
+  cb_info "Network: isolated"
+else
+  cb_info "Network: shared"
+fi
+
+if (( CB_DRY_RUN )); then
+  cb_print_command "$BWRAP_BIN" "${CB_BWRAP_ARGS[@]}"
+  exit 0
+fi
+
+set +e
+"$BWRAP_BIN" "${CB_BWRAP_ARGS[@]}"
+rc=$?
+set -e
+exit "$rc"

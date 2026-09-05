@@ -1,6 +1,6 @@
 # claude-bubblewrap Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a standalone `claude-bubblewrap` launcher that exposes the host read-only, overlays HOME with disposable tmpfs writes, bind-mounts one repository read/write, protects Git state, and launches Claude Code.
 
@@ -35,10 +35,10 @@
 - Produces parsed globals `CB_REPO`, `CB_GIT_SAVE`, `CB_ALLOW_GIT_PUSH`, `CB_OFFLINE`, `CB_SHELL`, `CB_DRY_RUN`, `CB_CLAUDE_ARGS`.
 - Produces `cb_require_command`, `cb_version_ge`, and `cb_check_bwrap_version`.
 
-- [ ] Write tests for help, defaults, option parsing, repo canonicalization, and semantic Bubblewrap version comparison.
-- [ ] Run them and confirm failure because launcher/libraries do not exist.
-- [ ] Implement the minimal CLI/preflight library and launcher wiring.
-- [ ] Re-run the tests until green.
+- [x] Write tests for help, defaults, option parsing, repo canonicalization, and semantic Bubblewrap version comparison.
+- [x] Run them and confirm failure because launcher/libraries do not exist.
+- [x] Implement the minimal CLI/preflight library and launcher wiring.
+- [x] Re-run the tests until green.
 
 ### Task 2: Atomic Git metadata snapshots
 
@@ -50,10 +50,10 @@
 - `git-snapshot.py REPO` prints the final ZIP path, or `NO_GIT` for a non-Git directory.
 - ZIP contains `manifest.json`, `git-common/`, and `worktree/gitfile` for linked worktrees.
 
-- [ ] Write tests for a normal repository, disabled launch path, linked worktree, archive naming, and absence of leftover temporary ZIPs.
-- [ ] Run and confirm failure because the snapshot helper does not exist.
-- [ ] Implement recursive ZIP creation with Unix metadata/symlink preservation, manifest generation, fsync, and atomic replace.
-- [ ] Re-run tests until green.
+- [x] Write tests for a normal repository, disabled launch path, linked worktree, archive naming, and absence of leftover temporary ZIPs.
+- [x] Run and confirm failure because the snapshot helper does not exist.
+- [x] Implement recursive ZIP creation with Unix metadata/symlink preservation, manifest generation, fsync, and atomic replace.
+- [x] Re-run tests until green.
 
 ### Task 3: Git push policy
 
@@ -66,10 +66,10 @@
 - `CLAUDE_BUBBLEWRAP_REAL_GIT` points to the sandbox-private original Git binary.
 - Policy wrapper rejects `push` and `send-pack`; otherwise execs the original Git.
 
-- [ ] Write tests proving status/log pass through and push/send-pack are rejected.
-- [ ] Run and confirm failure.
-- [ ] Implement both policy executables.
-- [ ] Re-run tests until green.
+- [x] Write tests proving status/log pass through and push/send-pack are rejected.
+- [x] Run and confirm failure.
+- [x] Implement both policy executables.
+- [x] Re-run tests until green.
 
 ### Task 4: Bubblewrap construction and launch
 
@@ -82,10 +82,10 @@
 - `cb_prepare_runtime_policy` creates immutable runtime copies for policy mounts.
 - `cb_cleanup_runtime_policy` removes host temporary policy files after Bubblewrap exits.
 
-- [ ] Write tests for root RO bind, HOME tmp overlay, repo RW bind, private `/tmp`/`/run`, namespace isolation, default network sharing, offline mode, Git policy mounts, and allow-push mode.
-- [ ] Run and confirm failure.
-- [ ] Implement argument construction and runtime policy preparation.
-- [ ] Re-run tests until green.
+- [x] Write tests for root RO bind, HOME tmp overlay, repo RW bind, private `/tmp`/`/run`, namespace isolation, default network sharing, offline mode, Git policy mounts, and allow-push mode.
+- [x] Run and confirm failure.
+- [x] Implement argument construction and runtime policy preparation.
+- [x] Re-run tests until green.
 
 ### Task 5: End-to-end launcher, docs, and system check
 
@@ -103,8 +103,8 @@
 - Launcher performs snapshot preflight before Bubblewrap execution and propagates exit status.
 - `scripts/check-system.sh` reports dependency/version readiness.
 
-- [ ] Write an end-to-end dry-run test proving snapshot-before-launch, skip flag, non-Git directory behavior, and Claude argument forwarding.
-- [ ] Run and confirm failure.
-- [ ] Complete launcher orchestration and system check.
-- [ ] Write installation, usage, recovery, and security documentation.
-- [ ] Run `tests/run.sh` and syntax checks.
+- [x] Write an end-to-end dry-run test proving snapshot-before-launch, skip flag, non-Git directory behavior, and Claude argument forwarding.
+- [x] Run and confirm failure.
+- [x] Complete launcher orchestration and system check.
+- [x] Write installation, usage, recovery, and security documentation.
+- [x] Run `tests/run.sh` and syntax checks.
