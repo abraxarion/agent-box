@@ -13,6 +13,8 @@ export HOME="$work/home"
 export PATH="/usr/bin:/bin"
 CB_REPO="$(realpath "$work/home/repo")"
 CB_OFFLINE=0
+CB_DISK_TMP=0
+CB_DISK_TMP_DIR=""
 CB_ALLOW_GIT_PUSH=0
 CB_SHELL=0
 CB_CLAUDE_ARGS=(--model sonnet)
@@ -58,3 +60,18 @@ cb_build_bwrap_args
 joined="$(printf '%q ' "${CB_BWRAP_ARGS[@]}")"
 assert_not_contains "$joined" '/run/claude-bubblewrap/real-git' 'allow-push omits git shadow mounts'
 pass 'allow push mode'
+
+CB_ALLOW_GIT_PUSH=1
+CB_DISK_TMP=1
+export XDG_CACHE_HOME="$work/cache"
+cb_prepare_disk_tmp
+disk_tmp_dir="$CB_DISK_TMP_DIR"
+assert_contains "$disk_tmp_dir" "$XDG_CACHE_HOME/claude-bubblewrap/tmp/claude-bubblewrap-tmp." 'disk tmp uses cache session path'
+assert_eq 700 "$(stat -c '%a' "$disk_tmp_dir")" 'disk tmp session directory is private'
+cb_build_bwrap_args
+joined="$(printf '%q ' "${CB_BWRAP_ARGS[@]}")"
+assert_contains "$joined" "--bind $disk_tmp_dir /tmp" 'disk tmp binds private host directory at /tmp'
+assert_not_contains "$joined" '--tmpfs /tmp' 'disk tmp replaces tmpfs /tmp'
+cb_cleanup_disk_tmp
+[[ ! -e "$disk_tmp_dir" ]] || fail 'disk tmp session directory was not removed'
+pass 'disk-backed tmp preparation, arguments, and cleanup'

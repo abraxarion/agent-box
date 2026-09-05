@@ -20,7 +20,7 @@ The sandbox is assembled in this order:
 1. `--ro-bind / /` exposes the host filesystem read-only at identical absolute paths.
 2. `--overlay-src "$HOME" --tmp-overlay "$HOME"` creates an ephemeral writable view of the complete host HOME. Reads fall through to the host HOME; all writes go to Bubblewrap's invisible tmpfs and disappear on exit.
 3. `--bind "$REPO" "$REPO"` punches the selected repository through as a real host read/write bind mount, overriding the HOME overlay when the repository lives under HOME.
-4. `/tmp` and `/run` are private tmpfs mounts; `/proc` and `/dev` are private mounts.
+4. `/run` is a private tmpfs mount. `/tmp` is a private tmpfs by default; `--disk-tmp` replaces it with a fresh mode-0700 host cache directory bind-mounted read/write at `/tmp` and removed on launcher exit. `/proc` and `/dev` are private mounts.
 5. Bubblewrap unshares all supported namespaces. Networking is shared by default so Claude can reach its API; `--offline` keeps the isolated network namespace.
 
 This is primarily write isolation, not confidentiality isolation: the read-only host root and the HOME lower layer can expose readable secrets.
@@ -66,6 +66,7 @@ Options:
   --git-save-disabled  Do not create the pre-launch Git metadata ZIP.
   --allow-git-push     Do not install Git push guards.
   --offline            Do not share the host network namespace.
+  --disk-tmp           Back sandbox /tmp with a private host disk directory.
   --shell              Start an interactive shell instead of Claude Code.
   --dry-run            Print the bwrap command after preflight and do not execute it.
   --no-git-save        Alias for --git-save-disabled.

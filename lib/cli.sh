@@ -14,6 +14,7 @@ Options:
   --no-git-save        Alias for --git-save-disabled.
   --allow-git-push     Disable the default Git push guards.
   --offline            Keep Bubblewrap's isolated network namespace.
+  --disk-tmp           Back sandbox /tmp with a private host disk directory.
   --shell              Start $SHELL (or /bin/bash) instead of Claude Code.
   --dry-run            Run preflight, print the bwrap command, and stop.
   -h, --help           Show this help.
@@ -28,6 +29,7 @@ cb_parse_args() {
   CB_GIT_SAVE=1
   CB_ALLOW_GIT_PUSH=0
   CB_OFFLINE=0
+  CB_DISK_TMP=0
   CB_SHELL=0
   CB_DRY_RUN=0
   CB_CLAUDE_ARGS=()
@@ -54,6 +56,9 @@ cb_parse_args() {
         ;;
       --offline)
         CB_OFFLINE=1
+        ;;
+      --disk-tmp)
+        CB_DISK_TMP=1
         ;;
       --shell)
         CB_SHELL=1

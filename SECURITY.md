@@ -7,7 +7,7 @@
 - The host filesystem is mounted read-only.
 - The selected repository is the explicit host read/write exception.
 - HOME writes go to a disposable tmpfs-backed overlay.
-- `/tmp` and `/run` are private.
+- `/tmp` and `/run` are private. `/tmp` is private tmpfs by default; `--disk-tmp` exposes only a per-session host cache directory at `/tmp`, never the host `/tmp` itself.
 - Host runtime sockets normally exposed under `/run` are hidden.
 - Process/IPC/UTS/user/cgroup namespaces are isolated.
 - Git metadata is backed up before launch unless explicitly disabled.
@@ -57,3 +57,9 @@ It is meant to prevent accidental or straightforward remote Git writes. It is no
 The selected repository is writable by the sandbox. Build scripts, hooks, binaries, and dependencies inside it should therefore be treated as potentially mutable during the session.
 
 The policy wrapper used for Git blocking is copied to a host temporary directory before sandbox launch and mounted read-only into the sandbox. This avoids relying on a policy file that might itself live inside the writable target repository.
+
+## Disk-backed temporary storage
+
+`--disk-tmp` deliberately creates one writable host directory below `${XDG_CACHE_HOME:-$HOME/.cache}/claude-bubblewrap/tmp/` and bind-mounts that directory at sandbox `/tmp`. This is an additional host write exception alongside the selected repository, but it is restricted to a fresh mode-0700 session directory and is removed on normal launcher exit.
+
+The cleanup trap cannot run after `SIGKILL`, a kernel crash, or sudden power loss. A stale session directory may therefore remain on disk after abnormal machine/process termination.

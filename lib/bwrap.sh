@@ -2,6 +2,7 @@
 # shellcheck shell=bash
 
 CB_RUNTIME_POLICY_DIR=""
+CB_DISK_TMP_DIR=""
 CB_BWRAP_ARGS=()
 
 cb_prepare_runtime_policy() {
@@ -24,6 +25,31 @@ cb_cleanup_runtime_policy() {
   CB_RUNTIME_POLICY_DIR=""
 }
 
+cb_prepare_disk_tmp() {
+  if (( ! CB_DISK_TMP )); then
+    return 0
+  fi
+
+  local cache_root base
+  cache_root="${XDG_CACHE_HOME:-$HOME/.cache}"
+  base="$cache_root/claude-bubblewrap/tmp"
+  mkdir -p -m 0700 -- "$base"
+  CB_DISK_TMP_DIR="$(mktemp -d "$base/claude-bubblewrap-tmp.XXXXXX")"
+  chmod 0700 "$CB_DISK_TMP_DIR"
+}
+
+cb_cleanup_disk_tmp() {
+  if [[ -n "${CB_DISK_TMP_DIR:-}" && -d "$CB_DISK_TMP_DIR" ]]; then
+    rm -rf -- "$CB_DISK_TMP_DIR"
+  fi
+  CB_DISK_TMP_DIR=""
+}
+
+cb_cleanup_session() {
+  cb_cleanup_runtime_policy
+  cb_cleanup_disk_tmp
+}
+
 cb_build_bwrap_args() {
   CB_BWRAP_ARGS=(
     --ro-bind / /
@@ -32,9 +58,15 @@ cb_build_bwrap_args() {
     --bind "$CB_REPO" "$CB_REPO"
     --proc /proc
     --dev /dev
-    --tmpfs /tmp
-    --tmpfs /run
   )
+
+  if (( CB_DISK_TMP )); then
+    [[ -n "$CB_DISK_TMP_DIR" && -d "$CB_DISK_TMP_DIR" ]] || cb_die "disk-backed /tmp was not prepared"
+    CB_BWRAP_ARGS+=(--bind "$CB_DISK_TMP_DIR" /tmp)
+  else
+    CB_BWRAP_ARGS+=(--tmpfs /tmp)
+  fi
+  CB_BWRAP_ARGS+=(--tmpfs /run)
 
   if (( ! CB_ALLOW_GIT_PUSH )); then
     [[ -n "$CB_RUNTIME_POLICY_DIR" ]] || cb_die "runtime Git policy was not prepared"

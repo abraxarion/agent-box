@@ -45,13 +45,19 @@ else
   BWRAP_BIN="${CLAUDE_BUBBLEWRAP_BWRAP:-bwrap}"
 fi
 
-trap cb_cleanup_runtime_policy EXIT INT TERM
+trap cb_cleanup_session EXIT
+cb_prepare_disk_tmp
 cb_prepare_runtime_policy "$CB_ROOT/libexec/git-policy" "$CB_ROOT/libexec/git-send-pack-block"
 cb_build_bwrap_args
 
 cb_info "Repository RW: $CB_REPO"
 cb_info "Host filesystem: read-only"
 cb_info "HOME: disposable tmpfs overlay"
+if (( CB_DISK_TMP )); then
+  cb_info "Temporary storage: private host-backed directory mounted at /tmp"
+else
+  cb_info "Temporary storage: private tmpfs at /tmp"
+fi
 if (( CB_ALLOW_GIT_PUSH )); then
   cb_info "Git push: allowed"
 else

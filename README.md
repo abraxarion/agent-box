@@ -10,7 +10,8 @@ HOST                                      SANDBOX
 /                          ────────────►   /                     read-only
 $HOME                      ────────────►   $HOME                 COW / disposable
 $REPO                      ────────────►   $REPO                 read-write
-/tmp                                      /tmp                  private tmpfs
+/tmp                                      /tmp                  private tmpfs (default)
+host cache session dir       ────────────► /tmp                  RW with --disk-tmp
 /run                                      /run                  private tmpfs
 /proc                                     /proc                 private
 /dev                                      /dev                  private
@@ -35,7 +36,7 @@ The repository's `.venv`, `node_modules`, Rust `target`, and other repo-local st
 - The complete host `$HOME` is the lower layer of a **disposable writable overlay**.
 - Your existing `~/.gitconfig`, `~/.config/git`, `~/.claude`, `~/.cargo`, `~/.npm`, etc. are immediately visible.
 - Writes outside the selected repository go to ephemeral sandbox storage and disappear when the sandbox exits.
-- `/tmp` and `/run` are private.
+- `/tmp` and `/run` are private. `/tmp` is tmpfs by default; `--disk-tmp` uses a private host-backed session directory instead.
 - PID/IPC/UTS/user/cgroup namespaces are isolated via `--unshare-all`.
 - Networking is shared by default so Claude Code can reach its API.
 - `--offline` removes external networking.
@@ -159,6 +160,38 @@ claude-bubblewrap --offline --shell ~/github/my-project
 ```
 
 `--offline` is useful for inspection/testing. Claude Code normally requires network access unless your setup routes it to something available inside that isolated namespace.
+
+### Disk-backed `/tmp`
+
+By default, sandbox `/tmp` is a private tmpfs. For builds or tools that can use substantial temporary space, use:
+
+```bash
+claude-bubblewrap --disk-tmp ~/github/my-project
+```
+
+The launcher creates a private mode-0700 session directory below:
+
+```text
+${XDG_CACHE_HOME:-$HOME/.cache}/claude-bubblewrap/tmp/
+```
+
+and bind-mounts only that session directory read/write at `/tmp` inside the sandbox. The host's real `/tmp` is never shared. The session directory is removed when the launcher exits, including when Bubblewrap/Claude exits with an error. Like any process cleanup, it cannot run after `SIGKILL`, a kernel crash, or sudden power loss; in those cases a stale session directory can remain in the cache tree.
+
+## Private temporary storage
+
+Default mode constructs `/tmp` with:
+
+```bash
+--tmpfs /tmp
+```
+
+`--disk-tmp` replaces that one mount with a private host-backed bind:
+
+```bash
+--bind "$SESSION_TMP" /tmp
+```
+
+This is useful for large compiles, archives, link steps, or other workloads where consuming RAM/swap through tmpfs is undesirable. In both modes, sandbox processes can write normally to `/tmp`, while unrelated files from the host's `/tmp` stay invisible.
 
 ## Disposable HOME
 

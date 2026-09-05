@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
-CB_VERSION="0.1.0"
+CB_VERSION="0.1.1"
 CB_MIN_BWRAP_VERSION="0.12.0"
 
 cb_die() {

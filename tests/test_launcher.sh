@@ -76,3 +76,38 @@ set -e
 assert_contains "$(cat "$work/old.err")" 'too old' 'old Bubblewrap rejection is explicit'
 assert_eq '' "$(cat "$work/old.log")" 'old Bubblewrap is never used to launch sandbox'
 pass 'Bubblewrap security floor enforced'
+
+
+# --disk-tmp uses a private host-backed session directory and cleans it even
+# when Bubblewrap exits non-zero.
+rm -rf "$work/disk-cache"
+set +e
+PATH="$fakebin:$PATH" XDG_CACHE_HOME="$work/disk-cache" FAKE_BWRAP_LOG="$work/disk-bwrap.args" \
+  CLAUDE_BUBBLEWRAP_BWRAP="$work/fake-bwrap" \
+  "$LAUNCHER" --git-save-disabled --disk-tmp "$repo" >"$work/disk.out" 2>"$work/disk.err"
+rc=$?
+set -e
+assert_eq 37 "$rc" 'disk tmp launch preserves non-zero child exit status'
+disk_args="$(cat "$work/disk-bwrap.args")"
+assert_contains "$disk_args" "$work/disk-cache/claude-bubblewrap/tmp/" 'disk tmp comes from private cache directory'
+assert_contains "$disk_args" '/tmp' 'disk tmp is mounted at sandbox /tmp'
+assert_no_match "$work/disk-cache/claude-bubblewrap/tmp/claude-bubblewrap-tmp.*"
+pass 'disk tmp cleaned after failed sandbox'
+
+# A zero-exit sandbox must clean the host-backed session directory as well.
+cat > "$work/fake-bwrap-ok" <<'SH'
+#!/usr/bin/env bash
+if [[ "${1:-}" == --version ]]; then
+  printf 'bubblewrap 0.12.0\n'
+  exit 0
+fi
+printf '%s\n' "$@" > "$FAKE_BWRAP_LOG"
+exit 0
+SH
+chmod +x "$work/fake-bwrap-ok"
+rm -rf "$work/disk-cache-ok"
+PATH="$fakebin:$PATH" XDG_CACHE_HOME="$work/disk-cache-ok" FAKE_BWRAP_LOG="$work/disk-ok.args" \
+  CLAUDE_BUBBLEWRAP_BWRAP="$work/fake-bwrap-ok" \
+  "$LAUNCHER" --git-save-disabled --disk-tmp "$repo" >"$work/disk-ok.out" 2>"$work/disk-ok.err"
+assert_no_match "$work/disk-cache-ok/claude-bubblewrap/tmp/claude-bubblewrap-tmp.*"
+pass 'disk tmp cleaned after successful sandbox'
