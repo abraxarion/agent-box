@@ -32,17 +32,17 @@ else
 fi
 
 if (( ! CB_DRY_RUN )); then
-  BWRAP_BIN="${CLAUDE_BUBBLEWRAP_BWRAP:-$(command -v bwrap || true)}"
+  BWRAP_BIN="${AGENT_BOX_BWRAP:-$(command -v bwrap || true)}"
   [[ -n "$BWRAP_BIN" ]] || cb_die "required command not found: bwrap"
   cb_check_bwrap_version "$BWRAP_BIN"
-  if (( CB_SHELL )); then
+  if (( CB_CLAUDE )); then
+    cb_require_command claude
+  else
     shell_bin="${SHELL:-/bin/bash}"
     [[ -x "$shell_bin" ]] || cb_die "shell is not executable: $shell_bin"
-  else
-    cb_require_command claude
   fi
 else
-  BWRAP_BIN="${CLAUDE_BUBBLEWRAP_BWRAP:-bwrap}"
+  BWRAP_BIN="${AGENT_BOX_BWRAP:-bwrap}"
 fi
 
 trap cb_cleanup_session EXIT

@@ -1,6 +1,6 @@
 # Security model
 
-`claude-bubblewrap` is designed primarily to protect the host from unintended filesystem writes while allowing an AI coding agent to work normally inside one selected repository.
+`agent-box` is designed primarily to protect the host from unintended filesystem writes while allowing an AI coding agent to work normally inside one selected repository.
 
 ## What the default sandbox protects
 
@@ -23,7 +23,7 @@ Do not treat this configuration as a secret-isolation boundary.
 
 ### Selective network egress
 
-The default mode shares the host network namespace so Claude Code can reach its API. Git-specific push guards are not equivalent to a firewall.
+The default mode shares the host network namespace so a coding agent can reach its API. Git-specific push guards are not equivalent to a firewall.
 
 Use `--offline` when no network traffic is acceptable.
 
@@ -60,6 +60,6 @@ The policy wrapper used for Git blocking is copied to a host temporary directory
 
 ## Disk-backed temporary storage
 
-`--disk-tmp` deliberately creates one writable host directory below `${XDG_CACHE_HOME:-$HOME/.cache}/claude-bubblewrap/tmp/` and bind-mounts that directory at sandbox `/tmp`. This is an additional host write exception alongside the selected repository, but it is restricted to a fresh mode-0700 session directory and is removed on normal launcher exit.
+`--disk-tmp` deliberately creates one writable host directory below `${XDG_CACHE_HOME:-$HOME/.cache}/agent-box/tmp/` and bind-mounts that directory at sandbox `/tmp`. This is an additional host write exception alongside the selected repository, but it is restricted to a fresh mode-0700 session directory and is removed on normal launcher exit.
 
 The cleanup trap cannot run after `SIGKILL`, a kernel crash, or sudden power loss. A stale session directory may therefore remain on disk after abnormal machine/process termination.

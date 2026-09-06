@@ -14,12 +14,12 @@ printf '\n'
 SH
 chmod +x "$work/real-git"
 
-out="$(CLAUDE_BUBBLEWRAP_REAL_GIT="$work/real-git" "$POLICY" status --short)"
+out="$(AGENT_BOX_REAL_GIT="$work/real-git" "$POLICY" status --short)"
 assert_contains "$out" 'REAL_GIT: <status> <--short>' 'normal git passes through'
 pass 'normal git passthrough'
 
 set +e
-CLAUDE_BUBBLEWRAP_REAL_GIT="$work/real-git" "$POLICY" -C /tmp push origin main >"$work/out" 2>"$work/err"
+AGENT_BOX_REAL_GIT="$work/real-git" "$POLICY" -C /tmp push origin main >"$work/out" 2>"$work/err"
 rc=$?
 set -e
 [[ $rc -ne 0 ]] || fail 'git push must fail'
@@ -27,7 +27,7 @@ assert_contains "$(cat "$work/err")" 'git push is disabled' 'push emits policy m
 pass 'git push blocked'
 
 set +e
-CLAUDE_BUBBLEWRAP_REAL_GIT="$work/real-git" "$POLICY" send-pack origin >"$work/out" 2>"$work/err"
+AGENT_BOX_REAL_GIT="$work/real-git" "$POLICY" send-pack origin >"$work/out" 2>"$work/err"
 rc=$?
 set -e
 [[ $rc -ne 0 ]] || fail 'git send-pack must fail'

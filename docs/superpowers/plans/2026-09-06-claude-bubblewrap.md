@@ -63,7 +63,7 @@
 - Test: `tests/test_git_policy.sh`
 
 **Interfaces:**
-- `CLAUDE_BUBBLEWRAP_REAL_GIT` points to the sandbox-private original Git binary.
+- `AGENT_BOX_REAL_GIT` points to the sandbox-private original Git binary.
 - Policy wrapper rejects `push` and `send-pack`; otherwise execs the original Git.
 
 - [x] Write tests proving status/log pass through and push/send-pack are rejected.

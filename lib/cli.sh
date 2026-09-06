@@ -4,7 +4,7 @@
 cb_usage() {
   cat <<'USAGE'
 Usage:
-  claude-bubblewrap [OPTIONS] [REPO] [-- CLAUDE_ARGS...]
+  agent-box [OPTIONS] [REPO] [-- CLAUDE_ARGS...]
 
 Run Claude Code in a Bubblewrap sandbox with the host filesystem read-only,
 a disposable writable HOME overlay, and one repository bind-mounted read/write.
@@ -15,10 +15,10 @@ Options:
   --allow-git-push     Disable the default Git push guards.
   --offline            Keep Bubblewrap's isolated network namespace.
   --disk-tmp           Back sandbox /tmp with a private host disk directory.
-  --shell              Start $SHELL (or /bin/bash) instead of Claude Code.
+  --claude             Start Claude Code instead of $SHELL (or /bin/bash).
   --dry-run            Run preflight, print the bwrap command, and stop.
   -h, --help           Show this help.
-  --version            Show claude-bubblewrap version.
+  --version            Show agent-box version.
 
 If REPO is omitted, the current directory is used.
 USAGE
@@ -30,7 +30,7 @@ cb_parse_args() {
   CB_ALLOW_GIT_PUSH=0
   CB_OFFLINE=0
   CB_DISK_TMP=0
-  CB_SHELL=0
+  CB_CLAUDE=0
   CB_DRY_RUN=0
   CB_CLAUDE_ARGS=()
 
@@ -60,8 +60,8 @@ cb_parse_args() {
       --disk-tmp)
         CB_DISK_TMP=1
         ;;
-      --shell)
-        CB_SHELL=1
+      --claude)
+        CB_CLAUDE=1
         ;;
       --dry-run)
         CB_DRY_RUN=1
@@ -71,7 +71,7 @@ cb_parse_args() {
         exit 0
         ;;
       --version)
-        printf 'claude-bubblewrap %s\n' "$CB_VERSION"
+        printf 'agent-box %s\n' "$CB_VERSION"
         exit 0
         ;;
       -* )

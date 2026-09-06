@@ -47,7 +47,7 @@ exit 37
 SH
 chmod +x "$work/fake-bwrap"
 set +e
-PATH="$fakebin:$PATH" FAKE_BWRAP_LOG="$work/bwrap.args" CLAUDE_BUBBLEWRAP_BWRAP="$work/fake-bwrap" \
+PATH="$fakebin:$PATH" FAKE_BWRAP_LOG="$work/bwrap.args" AGENT_BOX_BWRAP="$work/fake-bwrap" \
   "$LAUNCHER" --git-save-disabled "$repo" -- --model sonnet >"$work/launch.out" 2>"$work/launch.err"
 rc=$?
 set -e
@@ -68,7 +68,7 @@ SH
 chmod +x "$work/old-bwrap"
 : > "$work/old.log"
 set +e
-PATH="$fakebin:$PATH" FAKE_BWRAP_LOG="$work/old.log" CLAUDE_BUBBLEWRAP_BWRAP="$work/old-bwrap" \
+PATH="$fakebin:$PATH" FAKE_BWRAP_LOG="$work/old.log" AGENT_BOX_BWRAP="$work/old-bwrap" \
   "$LAUNCHER" --git-save-disabled "$repo" >"$work/old.out" 2>"$work/old.err"
 rc=$?
 set -e
@@ -83,7 +83,7 @@ pass 'Bubblewrap security floor enforced'
 rm -rf "$work/disk-cache"
 set +e
 PATH="$fakebin:$PATH" XDG_CACHE_HOME="$work/disk-cache" FAKE_BWRAP_LOG="$work/disk-bwrap.args" \
-  CLAUDE_BUBBLEWRAP_BWRAP="$work/fake-bwrap" \
+  AGENT_BOX_BWRAP="$work/fake-bwrap" \
   "$LAUNCHER" --git-save-disabled --disk-tmp "$repo" >"$work/disk.out" 2>"$work/disk.err"
 rc=$?
 set -e
@@ -107,7 +107,7 @@ SH
 chmod +x "$work/fake-bwrap-ok"
 rm -rf "$work/disk-cache-ok"
 PATH="$fakebin:$PATH" XDG_CACHE_HOME="$work/disk-cache-ok" FAKE_BWRAP_LOG="$work/disk-ok.args" \
-  CLAUDE_BUBBLEWRAP_BWRAP="$work/fake-bwrap-ok" \
+  AGENT_BOX_BWRAP="$work/fake-bwrap-ok" \
   "$LAUNCHER" --git-save-disabled --disk-tmp "$repo" >"$work/disk-ok.out" 2>"$work/disk-ok.err"
 assert_no_match "$work/disk-cache-ok/claude-bubblewrap/tmp/claude-bubblewrap-tmp.*"
 pass 'disk tmp cleaned after successful sandbox'

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-real_git="${CLAUDE_BUBBLEWRAP_REAL_GIT:-}"
+real_git="${AGENT_BOX_REAL_GIT:-}"
 if [[ -z "$real_git" || ! -x "$real_git" ]]; then
-  printf 'claude-bubblewrap: git policy cannot locate the real git executable\n' >&2
+  printf 'agent-box: git policy cannot locate the real git executable\n' >&2
   exit 126
 fi
 
 for arg in "$@"; do
   case "$arg" in
     push|send-pack)
-      printf 'claude-bubblewrap: git push is disabled in this sandbox; restart with --allow-git-push to enable it\n' >&2
+      printf 'agent-box: git push is disabled in this sandbox; restart with --allow-git-push to enable it\n' >&2
       exit 126
       ;;
   esac

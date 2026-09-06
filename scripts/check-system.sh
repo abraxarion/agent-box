@@ -37,7 +37,7 @@ fi
 if command -v claude >/dev/null 2>&1; then
   printf '%-12s OK  %s\n' claude "$(command -v claude)"
 else
-  printf '%-12s WARN not found (only required outside --shell mode)\n' claude
+  printf '%-12s WARN not found (only required outside interactive shell mode)\n' claude
 fi
 
 exit "$status"
