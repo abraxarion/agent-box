@@ -5,7 +5,7 @@
 <h1 align="center">agent-box</h1>
 
 <p align="center">
-  <strong>Give coding agents the environment they need—and only one place to write.</strong>
+  <strong>Give coding agents the environment they need—while limiting persistent writes to the selected repository.</strong>
 </p>
 
 <p align="center">
@@ -28,6 +28,8 @@
 `agent-box` runs an interactive shell or coding agent inside a [Bubblewrap](https://github.com/containers/bubblewrap) sandbox while preserving your real Linux toolchain and exact absolute paths.
 
 Your host filesystem remains visible but read-only. One selected repository is mounted read/write at its original path, while writes elsewhere in your home directory land in a disposable copy-on-write overlay. Existing Git identity, language runtimes, package caches, virtual environments, and agent configuration remain immediately available.
+
+This lets you safely try session-specific agent configuration. For example, you can edit Claude Code's default settings at `~/.claude/settings.json` from inside `agent-box`; the agent sees the changed settings for that session, but the host file is unchanged and the edits are discarded when `agent-box` exits.
 
 > [!IMPORTANT]
 > `agent-box` is primarily a **host write-isolation tool**, not a confidentiality boundary. Sandboxed programs can read files and credentials your Unix account can read. Network access is shared by default. Read the [security model](SECURITY.md) before using it with untrusted code.
@@ -267,6 +269,7 @@ agent-box --offline ~/projects/my-project
 | Standard-repository `.git` changes | Yes | Metadata is inside the repository bind |
 | Linked-worktree external Git metadata | Not necessarily | External Git directories remain read-only |
 | Writes elsewhere in `$HOME` | No | Disposable overlay |
+| `~/.claude/settings.json` edits | No | Disposable HOME overlay; available only during the sandbox session |
 | Default `/tmp` and `/run` | No | Private tmpfs |
 | `--disk-tmp` contents | Normally no | Session directory is removed at exit |
 | Pre-launch Git snapshot | Yes | Created on the host before sandbox startup |
