@@ -1,65 +1,94 @@
-# Security model
+# Security policy
 
-`agent-box` is designed primarily to protect the host from unintended filesystem writes while allowing an AI coding agent to work normally inside one selected repository.
+## Reporting a vulnerability
 
-## What the default sandbox protects
+Please report suspected vulnerabilities through a private [GitHub security advisory](https://github.com/abraxarion/agent-box/security/advisories/new).
+
+Do not open a public issue with exploit details, secrets, private paths, or sensitive diagnostic output. Include:
+
+- the affected agent-box and Bubblewrap versions;
+- the Linux distribution and kernel version;
+- the expected and observed isolation behavior;
+- the smallest safe reproduction you can provide;
+- any suggested mitigation.
+
+Maintainers will acknowledge the report, assess its impact, and coordinate disclosure as promptly as the project's availability allows.
+
+## Supported versions
+
+| Version | Security updates |
+|---|---|
+| Latest 0.1.x release | Yes |
+| Older releases | No |
+
+Use the newest available agent-box release and Bubblewrap 0.12.0 or newer.
+
+## Security model
+
+`agent-box` is designed primarily to protect the host from unintended filesystem writes while allowing a coding agent to use the existing development environment.
+
+### What the default sandbox protects
 
 - The host filesystem is mounted read-only.
-- The selected repository is the explicit host read/write exception.
-- HOME writes go to a disposable tmpfs-backed overlay.
-- `/tmp` and `/run` are private. `/tmp` is private tmpfs by default; `--disk-tmp` exposes only a per-session host cache directory at `/tmp`, never the host `/tmp` itself.
-- Host runtime sockets normally exposed under `/run` are hidden.
-- Process/IPC/UTS/user/cgroup namespaces are isolated.
-- Git metadata is backed up before launch unless explicitly disabled.
+- One selected repository is the explicit host read/write exception.
+- Writes elsewhere in HOME go to a disposable copy-on-write overlay.
+- `/tmp` and `/run` are private.
+- Host runtime sockets normally exposed below `/run` are hidden.
+- PID, IPC, UTS, user, and cgroup namespaces are isolated.
+- Git metadata is snapshotted before launch unless explicitly disabled.
 - Ordinary Git push paths are blocked unless explicitly enabled.
 
-## What it does not protect
+### What it does not protect
 
-### Confidentiality
+#### Confidentiality
 
-The host root is intentionally readable, and HOME is intentionally used as the overlay lower layer. Therefore the sandbox may read secrets that your Unix account can read, including credentials stored in HOME or elsewhere.
+The host root is intentionally readable, and the real HOME is the lower layer of the disposable overlay. A sandboxed program can therefore read credentials and other files that the launching Unix account can read.
 
-Do not treat this configuration as a secret-isolation boundary.
+Do not treat agent-box as a secret-isolation boundary. Use a separate account, virtual machine, or purpose-built confidential-computing environment when code must not see host data.
 
-### Selective network egress
+#### Selective network egress
 
-The default mode shares the host network namespace so a coding agent can reach its API. Git-specific push guards are not equivalent to a firewall.
+The default mode shares the network namespace so coding agents can reach their APIs. The Git push guard is not a firewall.
 
-Use `--offline` when no network traffic is acceptable.
+Use `--offline` when no normal external network access is acceptable. agent-box does not currently offer a domain or port allowlist.
 
-A future selective-egress mode should use an isolated network namespace with only a controlled proxy/firewall path exposed.
+#### Complete working-tree backup
 
-### Working-tree backup
+The automatic ZIP stores Git metadata. It does not capture arbitrary untracked files or unstaged content that has never been stored in Git.
 
-The automatic ZIP archives Git metadata, not every working-tree byte. Untracked files and unstaged modifications are outside its scope.
+Git metadata can itself contain sensitive remote URLs, hooks, or configuration. Snapshot archives are created with mode `0600`; protect and delete them according to your local data-retention policy.
+
+#### Malicious network clients
+
+The Git policy prevents ordinary `git push` and `git send-pack` commands, including configured aliases that resolve to them. A hostile process with shared networking can invoke another Git executable, use another client, or implement a remote protocol itself.
 
 ## Bubblewrap minimum version
 
-Versions before 0.12.0 are rejected because of:
+agent-box rejects Bubblewrap versions earlier than 0.12.0. Those releases are affected by [GHSA-pxhw-h44j-8pfx](https://github.com/containers/bubblewrap/security/advisories/GHSA-pxhw-h44j-8pfx), a high-severity symlink traversal during sandbox setup. Bubblewrap 0.12.0 fixes the issue and removes support for setuid builds.
 
-- GHSA-pxhw-h44j-8pfx
-- <https://github.com/containers/bubblewrap/security/advisories/GHSA-pxhw-h44j-8pfx>
+## Persistent host writes
 
-The advisory describes a sandbox-setup symlink traversal problem fixed in Bubblewrap 0.12.0.
+The selected repository is always writable by design. With `--disk-tmp`, agent-box also creates a private mode-0700 session directory below the user's cache directory and mounts it at sandbox `/tmp`.
 
-## Git push guard threat model
+The repository bind is applied after the private runtime mounts so a project below `/tmp` remains accessible at its original path. Paths that are `/` or contain HOME, `/tmp`, `/run`, `/proc`, or `/dev` are rejected because rebinding one of those broad ancestors would undo a protection layer.
 
-The default push guard is defense in depth for normal Git execution:
-
-- PATH wrapper;
-- canonical Git executable shadowing;
-- `git-send-pack` shadowing.
-
-It is meant to prevent accidental or straightforward remote Git writes. It is not intended to defeat a hostile program that has unrestricted network access and deliberately implements a remote Git write protocol itself.
+The disk-backed temporary directory is removed on normal launcher exit, including non-zero child exits. Cleanup cannot run after `SIGKILL`, a kernel crash, or sudden power loss, so stale session data can remain.
 
 ## Repository trust
 
-The selected repository is writable by the sandbox. Build scripts, hooks, binaries, and dependencies inside it should therefore be treated as potentially mutable during the session.
+The selected repository is writable by the sandbox. Build scripts, hooks, binaries, and dependencies inside it may therefore change during a session.
 
-The policy wrapper used for Git blocking is copied to a host temporary directory before sandbox launch and mounted read-only into the sandbox. This avoids relying on a policy file that might itself live inside the writable target repository.
+Git policy executables are copied beneath host `/tmp` before launch, independently of caller-controlled `TMPDIR`, and mounted read-only. Sandbox `/tmp` is replaced before the selected repository is rebound, so the source policy directory is unreachable through the writable repository.
 
-## Disk-backed temporary storage
+## Linked worktrees
 
-`--disk-tmp` deliberately creates one writable host directory below `${XDG_CACHE_HOME:-$HOME/.cache}/agent-box/tmp/` and bind-mounts that directory at sandbox `/tmp`. This is an additional host write exception alongside the selected repository, but it is restricted to a fresh mode-0700 session directory and is removed on normal launcher exit.
+The snapshot helper recognizes linked worktrees and archives their common and worktree-specific Git metadata. The sandbox does not currently add read/write mounts for external linked-worktree metadata, so some Git operations may fail read-only even though working-tree file edits persist.
 
-The cleanup trap cannot run after `SIGKILL`, a kernel crash, or sudden power loss. A stale session directory may therefore remain on disk after abnormal machine/process termination.
+## Operational recommendations
+
+- Review the repository and its startup hooks before launching an agent.
+- Keep Bubblewrap and agent-box updated.
+- Use `--offline` when API or package-network access is unnecessary.
+- Keep the default Git snapshot and push guard enabled unless you have a specific reason not to.
+- Review repository changes before committing, pushing, or executing generated code outside the sandbox.
+- Remove stale disk-backed temporary directories only after confirming no agent-box session is using them.

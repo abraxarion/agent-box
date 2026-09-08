@@ -1,0 +1,51 @@
+name: Bug report
+description: Report reproducible incorrect behavior.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve agent-box. Do not include credentials or
+        vulnerability details here; use the private security-reporting link.
+  - type: input
+    id: version
+    attributes:
+      label: agent-box version
+      description: Run ./agent-box --version.
+      placeholder: agent-box 0.1.1
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Linux distribution, kernel, Bash, Bubblewrap, Git, and Python versions.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest safe sequence that demonstrates the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Remove secrets, tokens, usernames, and private paths before posting.
+      render: shell

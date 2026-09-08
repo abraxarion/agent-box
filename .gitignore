@@ -1,6 +1,9 @@
 __pycache__/
-*.pyc
+*.py[cod]
+*.git-save-*.zip
 .DS_Store
+.idea/
+.vscode/
 
-
-
+cc.sh
+agent-box-codex.zip

@@ -1,25 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=../lib/common.sh
 source "$ROOT/lib/common.sh"
 
 status=0
-printf 'claude-bubblewrap system check\n\n'
+printf 'agent-box system check\n\n'
 
-for cmd in bash python3 git realpath; do
-  if command -v "$cmd" >/dev/null 2>&1; then
-    case "$cmd" in
-      bash) printf '%-12s OK  %s\n' bash "$(bash --version | head -n1)" ;;
-      python3) printf '%-12s OK  %s\n' python3 "$(python3 --version 2>&1)" ;;
-      git) printf '%-12s OK  %s\n' git "$(git --version)" ;;
-      realpath) printf '%-12s OK  %s\n' realpath "$(command -v realpath)" ;;
-    esac
+check_versioned_command() {
+  local name="$1" required="$2" output actual
+  if ! command -v "$name" >/dev/null 2>&1; then
+    printf '%-12s FAIL missing (need >= %s)\n' "$name" "$required"
+    status=1
+    return
+  fi
+
+  case "$name" in
+    bash) output="$(bash --version | head -n1)" ;;
+    python3) output="$(python3 --version 2>&1)" ;;
+    git) output="$(git --version)" ;;
+  esac
+  actual="$(printf '%s\n' "$output" | grep -Eo '[0-9]+(\.[0-9]+){1,2}' | head -n1)"
+  if [[ -n "$actual" ]] && cb_version_ge "$actual" "$required"; then
+    printf '%-12s OK  %s\n' "$name" "$actual"
   else
-    printf '%-12s FAIL missing\n' "$cmd"
+    printf '%-12s FAIL %s (need >= %s)\n' "$name" "${actual:-unknown}" "$required"
     status=1
   fi
-done
+}
+
+check_versioned_command bash "$CB_MIN_BASH_VERSION"
+check_versioned_command python3 "$CB_MIN_PYTHON_VERSION"
+check_versioned_command git "$CB_MIN_GIT_VERSION"
+
+if command -v realpath >/dev/null 2>&1; then
+  printf '%-12s OK  %s\n' realpath "$(command -v realpath)"
+else
+  printf '%-12s FAIL missing\n' realpath
+  status=1
+fi
 
 if command -v bwrap >/dev/null 2>&1; then
   version="$(cb_bwrap_version "$(command -v bwrap)" || true)"
@@ -37,7 +57,7 @@ fi
 if command -v claude >/dev/null 2>&1; then
   printf '%-12s OK  %s\n' claude "$(command -v claude)"
 else
-  printf '%-12s WARN not found (only required outside interactive shell mode)\n' claude
+  printf '%-12s WARN not found (only required with --claude)\n' claude
 fi
 
 exit "$status"

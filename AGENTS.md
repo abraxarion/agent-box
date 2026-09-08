@@ -24,8 +24,8 @@ Do not change these casually. Any change requires tests and corresponding README
 1. **Exact paths are preserved.** The repository must appear at the same absolute path inside and outside the sandbox.
 2. **Host root is read-only.** `--ro-bind / /` is the base filesystem policy.
 3. **HOME writes are disposable.** The real HOME is a read-only lower layer; normal sandbox writes to HOME must not persist to the host.
-4. **The selected repository is the intentional persistent RW exception.** It is bind-mounted after the HOME overlay so it punches through that overlay.
-5. **Mount order is semantic.** Reordering root, HOME, repo, `/tmp`, `/run`, or Git-policy mounts can change security behavior.
+4. **The selected repository is the intentional persistent RW exception.** It is bind-mounted after the HOME overlay and private runtime mounts so it punches through only at the selected path.
+5. **Mount order is semantic.** Reordering root, HOME, private runtime filesystems, repo, or Git-policy mounts can change security behavior.
 6. **Host `/tmp` is never shared directly.** Sandbox `/tmp` is private tmpfs by default or a fresh private session directory with `--disk-tmp`.
 7. **Host `/run` is hidden.** Do not expose the host `/run` tree by default; it contains powerful sockets and runtime channels.
 8. **Git metadata backup is host-side and pre-launch by default.** Snapshot failure is fatal unless the user explicitly disables saving.
@@ -88,7 +88,7 @@ EXIT trap removes host temp state
 
 The Git recovery archive is a host safety mechanism. It must be created before the writable repository is handed to a coding agent (like Claude Code). Do not move snapshot creation into the sandbox.
 
-The temporary Git-policy files are also prepared on the host before launch and mounted read-only. This avoids relying on policy code stored inside the writable target repository.
+The temporary Git-policy files are prepared below host `/tmp`, ignoring inherited `TMPDIR`, before launch. Sandbox `/tmp` is replaced before the selected repository is rebound, which keeps the source policy directory unreachable from the writable target repository.
 
 ## Mounting strategy
 
@@ -97,8 +97,8 @@ The temporary Git-policy files are also prepared on the host before launch and m
 ```text
 1. host root RO
 2. HOME disposable overlay
-3. selected repo RW
-4. private proc/dev/tmp/run
+3. private proc/dev/tmp/run
+4. selected repo RW
 5. Git-policy overrides
 6. namespaces/session/chdir/command
 ```
@@ -133,25 +133,7 @@ Consequences:
 - Git user name/email do not need to be re-entered;
 - no eager copy of the entire HOME is required.
 
-### Layer 3: repository read/write punch-through
-
-```bash
---bind "$CB_REPO" "$CB_REPO"
-```
-
-This must follow the HOME overlay. For a repo inside HOME:
-
-```text
-$HOME/                              disposable overlay
-└── github/
-    └── project/                    real RW bind
-```
-
-Repository writes persist. Repo-local `.venv`, `node_modules`, `target`, and other path-sensitive content retain exact paths.
-
-**Known linked-worktree limitation:** a linked worktree's `.git` is a pointer file and its actual worktree/common Git metadata usually lives outside `CB_REPO`. Those external paths remain under the host read-only root in the current architecture. The snapshot helper supports linked worktrees, but the sandbox does not currently punch their external Git metadata through RW. Do not claim full linked-worktree Git mutation support until explicit, narrowly scoped RW mounts and tests are added.
-
-### Layer 4: private runtime filesystems
+### Layer 3: private runtime filesystems
 
 ```bash
 --proc /proc
@@ -181,9 +163,29 @@ with mode `0700`. Only the fresh per-session directory is exposed RW. The host's
 
 `/run` stays private to hide host sockets such as D-Bus, Docker/Podman control sockets, SSH agents, and similar channels.
 
+### Layer 4: repository read/write punch-through
+
+```bash
+--bind "$CB_REPO" "$CB_REPO"
+```
+
+This must follow both the HOME overlay and the private runtime filesystems. For a repo inside HOME:
+
+```text
+$HOME/                              disposable overlay
+└── github/
+    └── project/                    real RW bind
+```
+
+The same ordering keeps a repository below `/tmp` visible after private `/tmp` is created. The CLI rejects a repository path that is itself `/` or contains a protected mount root, because rebinding such a broad path would undo the isolation layers.
+
+Repository writes persist. Repo-local `.venv`, `node_modules`, `target`, and other path-sensitive content retain exact paths.
+
+**Known linked-worktree limitation:** a linked worktree's `.git` is a pointer file and its actual worktree/common Git metadata usually lives outside `CB_REPO`. Those external paths remain under the host read-only root in the current architecture. The snapshot helper supports linked worktrees, but the sandbox does not currently punch their external Git metadata through RW. Do not claim full linked-worktree Git mutation support until explicit, narrowly scoped RW mounts and tests are added.
+
 ### Layer 5: Git policy mounts
 
-When `CB_ALLOW_GIT_PUSH=0`, the launcher prepares immutable runtime copies of the Git wrappers and adds mounts that:
+When `CB_ALLOW_GIT_PUSH=0`, the launcher prepares sandbox-inaccessible source copies of the Git wrappers under host `/tmp` and adds read-only mounts that:
 
 - place the policy `git` first in `PATH`;
 - shadow the canonical `git` executable path;
@@ -212,9 +214,13 @@ The command also uses:
 
 ```bash
 --die-with-parent
---new-session
 --chdir "$CB_REPO"
 ```
+
+`--new-session` is deliberately omitted: a session created by `setsid()`
+cannot acquire the launcher's terminal as its controlling terminal, which
+disables job control in the inner shell and makes Ctrl+C kill the entire
+sandbox (via `--die-with-parent`) instead of the foreground command.
 
 Keep the distinction clear:
 
@@ -241,6 +247,8 @@ write beside the repository:
 
 Name collisions in the same second get numeric suffixes.
 
+Create both the temporary and final archive with mode `0600`. Git metadata can contain credentials in remote URLs, hooks, or machine-specific configuration and must not inherit a permissive caller umask.
+
 ### Repository kinds
 
 The helper detects:
@@ -265,7 +273,7 @@ The helper preserves regular files, directories, Unix modes and symlinks where a
 The final archive must never look valid until complete:
 
 1. choose the final timestamped path;
-2. write a hidden `.tmp` archive in the same parent directory;
+2. securely create a mode-`0600` hidden `.tmp` archive in the same parent directory;
 3. fsync the archive;
 4. atomically `os.replace()` it to the final name;
 5. best-effort fsync the parent directory.
@@ -278,7 +286,7 @@ The archive is **Git metadata only**. It does not protect arbitrary untracked fi
 
 ## Git push policy
 
-`libexec/git-policy` rejects arguments containing the `push` or `send-pack` subcommands and otherwise execs the real Git binary supplied through:
+`libexec/git-policy` parses Git's global options, rejects `push` or `send-pack` when either is the actual subcommand, follows ordinary Git alias chains to reject aliases resolving to those commands, and otherwise execs the real Git binary supplied through:
 
 ```text
 AGENT_BOX_REAL_GIT=/run/agent-box/real-git
@@ -403,9 +411,11 @@ Do not weaken tests merely to make a change pass.
 |---|---|
 | `tests/test_cli.sh` | CLI help, parsing, defaults, Bubblewrap version comparison. |
 | `tests/test_git_snapshot.sh` | standard repo/worktree snapshots, output location, atomic temp cleanup, non-Git handling. |
-| `tests/test_git_policy.sh` | normal Git passthrough and push/send-pack rejection. |
-| `tests/test_bwrap_args.sh` | mount ordering/content, namespace policy, Git shadowing, `/tmp` modes. |
+| `tests/test_git_policy.sh` | normal Git/help passthrough, push/send-pack rejection, and push-alias blocking. |
+| `tests/test_bwrap_args.sh` | mount ordering/content, namespace policy, policy-source isolation, Git shadowing, `/tmp` modes. |
 | `tests/test_launcher.sh` | orchestration, snapshot defaults, bwrap version gate, child exit propagation, disk-tmp cleanup. |
+| `tests/test_system_check.sh` | advertised Bash, Python, and Git minimum-version enforcement. |
+| `tests/test_public_repo.sh` | public documentation, community files, branding asset, and package hygiene. |
 | `tests/run.sh` | complete suite entrypoint. |
 
 ## Required verification before claiming completion
@@ -420,7 +430,8 @@ Then:
 
 ```bash
 bash -n agent-box lib/*.sh libexec/git-policy libexec/git-send-pack-block scripts/*.sh tests/*.sh
-python3 -m py_compile libexec/git-snapshot.py
+shellcheck -x agent-box lib/*.sh libexec/git-policy libexec/git-send-pack-block scripts/*.sh tests/*.sh
+PYTHONPYCACHEPREFIX=/tmp/agent-box-pycache python3 -m py_compile libexec/git-snapshot.py
 git diff --check
 ```
 

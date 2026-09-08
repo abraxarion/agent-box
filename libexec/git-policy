@@ -7,13 +7,160 @@ if [[ -z "$real_git" || ! -x "$real_git" ]]; then
   exit 126
 fi
 
-for arg in "$@"; do
+command_name=""
+args=("$@")
+config_context=()
+index=0
+informational=0
+
+deny_push() {
+  printf 'agent-box: git push is disabled in this sandbox; restart with --allow-git-push to enable it\n' >&2
+  exit 126
+}
+
+deny_unverified_alias() {
+  printf 'agent-box: refusing a git alias that cannot be safely verified by the no-push policy\n' >&2
+  exit 126
+}
+
+# Find Git's subcommand without mistaking a later revision or path for it.
+# Options that consume a following value must be skipped as a pair.
+while (( index < ${#args[@]} )); do
+  arg="${args[index]}"
   case "$arg" in
-    push|send-pack)
-      printf 'agent-box: git push is disabled in this sandbox; restart with --allow-git-push to enable it\n' >&2
-      exit 126
+    --)
+      index=$((index + 1))
+      command_name="${args[index]:-}"
+      break
+      ;;
+    -C|-c|--git-dir|--work-tree|--namespace|--super-prefix|--config-env)
+      if (( index + 1 < ${#args[@]} )); then
+        config_context+=("$arg" "${args[index + 1]}")
+      fi
+      index=$((index + 2))
+      ;;
+    --git-dir=*|--work-tree=*|--namespace=*|--super-prefix=*|--config-env=*)
+      config_context+=("$arg")
+      index=$((index + 1))
+      ;;
+    -h|--help|-v|--version)
+      informational=1
+      index=$((index + 1))
+      ;;
+    -*)
+      index=$((index + 1))
+      ;;
+    *)
+      command_name="$arg"
+      break
       ;;
   esac
+done
+
+if (( informational )); then
+  exec "$real_git" "$@"
+fi
+
+case "$command_name" in
+  push|send-pack)
+    deny_push
+    ;;
+esac
+
+# Git aliases are ordinary command paths and must not turn a harmless-looking
+# subcommand into push. Resolve alias chains without evaluating them. Python's
+# shlex parser preserves quoted option values while avoiding shell evaluation.
+alias_name="$command_name"
+declare -A seen_aliases=()
+while [[ -n "$alias_name" ]]; do
+  if [[ -n "${seen_aliases[$alias_name]:-}" ]]; then
+    deny_unverified_alias
+  fi
+  seen_aliases["$alias_name"]=1
+
+  if ! alias_value="$("$real_git" "${config_context[@]}" config --get "alias.$alias_name" 2>/dev/null)"; then
+    break
+  fi
+  [[ -n "$alias_value" ]] || break
+
+  if [[ "$alias_value" == '!'* ]]; then
+    case " $alias_value " in
+      *' push '*|*' send-pack '*)
+        deny_push
+        ;;
+    esac
+    break
+  fi
+
+  alias_parts=()
+  mapfile -d '' -t alias_parts < <(
+    python3 -c '
+import shlex
+import sys
+
+try:
+    words = shlex.split(sys.argv[1], posix=True)
+except ValueError as exc:
+    fields = ["ERROR", str(exc)]
+else:
+    context = []
+    command = ""
+    index = 0
+    value_options = {
+        "-C", "-c", "--git-dir", "--work-tree", "--namespace",
+        "--super-prefix", "--config-env",
+    }
+    value_prefixes = (
+        "--git-dir=", "--work-tree=", "--namespace=",
+        "--super-prefix=", "--config-env=",
+    )
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            index += 1
+            command = words[index] if index < len(words) else ""
+            break
+        if word in value_options:
+            if index + 1 >= len(words):
+                fields = ["ERROR", "global option is missing its value"]
+                break
+            context.extend((word, words[index + 1]))
+            index += 2
+            continue
+        if word.startswith(value_prefixes):
+            context.append(word)
+            index += 1
+            continue
+        if word.startswith("-"):
+            index += 1
+            continue
+        command = word
+        break
+    else:
+        fields = ["OK", command, *context]
+    if "fields" not in locals():
+        fields = ["OK", command, *context]
+
+for field in fields:
+    sys.stdout.buffer.write(field.encode("utf-8", "surrogateescape") + b"\0")
+' "$alias_value"
+  )
+
+  if [[ "${alias_parts[0]:-}" != "OK" ]]; then
+    deny_unverified_alias
+  fi
+  alias_command="${alias_parts[1]:-}"
+  if (( ${#alias_parts[@]} > 2 )); then
+    config_context+=("${alias_parts[@]:2}")
+  fi
+
+  case "$alias_command" in
+    push|send-pack)
+      deny_push
+      ;;
+  esac
+  [[ -n "$alias_command" ]] || deny_unverified_alias
+  alias_name="$alias_command"
 done
 
 exec "$real_git" "$@"

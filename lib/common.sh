@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
+# Version state is consumed by scripts that source this file.
+# shellcheck disable=SC2034
 
 CB_VERSION="0.1.1"
+CB_MIN_BASH_VERSION="4.4"
+CB_MIN_GIT_VERSION="2.0"
+CB_MIN_PYTHON_VERSION="3.9"
 CB_MIN_BWRAP_VERSION="0.12.0"
 
 cb_die() {
-  printf 'claude-bubblewrap: ERROR: %s\n' "$*" >&2
+  printf 'agent-box: ERROR: %s\n' "$*" >&2
   exit 1
 }
 
 cb_warn() {
-  printf 'claude-bubblewrap: WARNING: %s\n' "$*" >&2
+  printf 'agent-box: WARNING: %s\n' "$*" >&2
 }
 
 cb_info() {
-  printf 'claude-bubblewrap: %s\n' "$*" >&2
+  printf 'agent-box: %s\n' "$*" >&2
 }
 
 cb_require_command() {
@@ -30,7 +35,7 @@ cb_version_ge() {
 
 cb_bwrap_version() {
   local bwrap_bin="$1" out version
-  out="$($bwrap_bin --version 2>/dev/null)" || return 1
+  out="$("$bwrap_bin" --version 2>/dev/null)" || return 1
   version="$(printf '%s\n' "$out" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
   [[ -n "$version" ]] || return 1
   printf '%s\n' "$version"

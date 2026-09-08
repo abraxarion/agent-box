@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=testlib.sh
 source "$(dirname "$0")/testlib.sh"
 
 SNAPSHOT="$TEST_ROOT/libexec/git-snapshot.py"
@@ -8,8 +10,9 @@ trap 'rm -rf "$work"' EXIT
 
 repo="$work/repo"
 make_git_repo "$repo"
-archive="$($SNAPSHOT "$repo")"
+archive="$(umask 0777; "$SNAPSHOT" "$repo")"
 assert_file "$archive"
+assert_eq 600 "$(stat -c '%a' "$archive")" 'archive is private despite caller umask'
 assert_eq "$(dirname "$repo")" "$(dirname "$archive")" 'archive stored above repo'
 assert_contains "$(basename "$archive")" 'repo.git-save-' 'timestamped archive name'
 python3 - "$archive" <<'PY'

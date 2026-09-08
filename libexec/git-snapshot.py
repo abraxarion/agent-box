@@ -140,31 +140,36 @@ def main() -> int:
 
     final_path = unique_final_path(repo)
     temp_path = final_path.parent / f".{final_path.name}.tmp"
+    temp_fd = -1
 
     try:
-        with zipfile.ZipFile(
-            temp_path,
-            mode="x",
-            compression=zipfile.ZIP_DEFLATED,
-            compresslevel=6,
-            allowZip64=True,
-        ) as zf:
-            zf.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-            add_tree(zf, common_dir, "git-common")
+        temp_fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.fchmod(temp_fd, 0o600)
+        with os.fdopen(temp_fd, "w+b") as temp_file:
+            temp_fd = -1
+            with zipfile.ZipFile(
+                temp_file,
+                mode="w",
+                compression=zipfile.ZIP_DEFLATED,
+                compresslevel=6,
+                allowZip64=True,
+            ) as zf:
+                zf.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+                add_tree(zf, common_dir, "git-common")
 
-            if dotgit.is_file():
-                zf.write(dotgit, "worktree/gitfile")
+                if dotgit.is_file():
+                    zf.write(dotgit, "worktree/gitfile")
 
-            try:
-                git_dir.relative_to(common_dir)
-                git_dir_is_in_common = True
-            except ValueError:
-                git_dir_is_in_common = False
-            if git_dir != common_dir and not git_dir_is_in_common:
-                add_tree(zf, git_dir, "git-worktree")
+                try:
+                    git_dir.relative_to(common_dir)
+                    git_dir_is_in_common = True
+                except ValueError:
+                    git_dir_is_in_common = False
+                if git_dir != common_dir and not git_dir_is_in_common:
+                    add_tree(zf, git_dir, "git-worktree")
 
-        with temp_path.open("rb") as f:
-            os.fsync(f.fileno())
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
         os.replace(temp_path, final_path)
         try:
             dir_fd = os.open(final_path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
@@ -175,6 +180,8 @@ def main() -> int:
         except OSError:
             pass
     except Exception:
+        if temp_fd >= 0:
+            os.close(temp_fd)
         try:
             temp_path.unlink()
         except FileNotFoundError:

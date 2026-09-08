@@ -1,621 +1,348 @@
-# agent-box
+<p align="center">
+  <img src="assets/agent-box-icon.png" alt="agent-box — a protected box containing an agent node" width="220">
+</p>
 
-`agent-box` runs **a coding agent (like Claude Code, Codex, Pi, etc.) inside a Bubblewrap sandbox while reusing your real Linux development environment and exact absolute paths**.
+<h1 align="center">agent-box</h1>
 
-The host filesystem is visible read-only, one selected repository is bind-mounted read/write at its original path, and your complete `$HOME` is presented as a disposable copy-on-write view. This lets the coding agent use your existing Git identity, Python environments, Node/Rust/Homebrew installations, coding agent configuration, and other host tooling without giving normal write access to the rest of the host.
+<p align="center">
+  <strong>Give coding agents the environment they need—and only one place to write.</strong>
+</p>
 
-```text
-HOST                                           SANDBOX
+<p align="center">
+  <a href="https://github.com/abraxarion/agent-box/actions/workflows/ci.yml"><img src="https://github.com/abraxarion/agent-box/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-7c3aed.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/platform-Linux-22d3ee.svg" alt="Linux">
+  <img src="https://img.shields.io/badge/Bubblewrap-%E2%89%A50.12.0-2563eb.svg" alt="Bubblewrap 0.12.0 or newer">
+</p>
 
-/                              ─────────────►  /                  read-only
-$HOME                          ─────────────►  $HOME              disposable COW
-$REPO                          ─────────────►  $REPO              read/write
-host Git metadata snapshot     stays outside  sandbox lifecycle  host-side ZIP
-/tmp                                           /tmp               private tmpfs (default)
-private cache session dir      ─────────────►  /tmp               RW with --disk-tmp
-/run                                           /run               private tmpfs
-/proc                                          /proc              private procfs
-/dev                                           /dev               private device view
-```
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#command-line-reference">CLI</a> ·
+  <a href="SECURITY.md">Security model</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
-## What this is for
+---
 
-A normal container often changes paths and requires rebuilding the development environment. That can be inconvenient when a repository already contains path-sensitive state such as:
+`agent-box` runs an interactive shell or coding agent inside a [Bubblewrap](https://github.com/containers/bubblewrap) sandbox while preserving your real Linux toolchain and exact absolute paths.
 
-```text
-/home/user/github/project/.venv/bin/python
-```
-
-With `agent-box`, that path is still exactly:
-
-```text
-/home/user/github/project/.venv/bin/python
-```
-
-inside the sandbox. The repository's `.venv`, `node_modules`, Rust `target`, build directories, and other repo-local files remain directly usable because the repository itself is a real read/write bind mount.
-
-## Default behavior
-
-A normal invocation:
-
-```bash
-agent-box ~/github/my-project
-```
-
-performs this sequence:
-
-1. Resolve the repository to its canonical absolute path.
-2. Verify the host-side prerequisites needed for preflight.
-3. Create an atomic ZIP snapshot of Git metadata in the repository's parent directory, if the target is a Git repository.
-4. Verify Bubblewrap is at least version `0.12.0`.
-5. Build the sandbox mount and namespace policy.
-6. Launch your coding agent with the repository as the working directory.
-7. Remove temporary host-side runtime-policy files and any `--disk-tmp` session directory when the launcher exits.
-
-The resulting policy is:
-
-- host `/`: **read-only**;
-- selected repository: **read/write**;
-- `$HOME`: **disposable writable copy-on-write overlay**;
-- `/tmp`: **private writable tmpfs** by default;
-- `/run`: **private writable tmpfs**;
-- `/proc`: private procfs;
-- `/dev`: private Bubblewrap device view;
-- PID/IPC/UTS/user/cgroup namespaces: isolated through `--unshare-all`;
-- network: shared by default so any coding agent can reach its API;
-- Git metadata backup: enabled by default;
-- `git push`: blocked by default.
+Your host filesystem remains visible but read-only. One selected repository is mounted read/write at its original path, while writes elsewhere in your home directory land in a disposable copy-on-write overlay. Existing Git identity, language runtimes, package caches, virtual environments, and agent configuration remain immediately available.
 
 > [!IMPORTANT]
-> This is primarily a **host write-isolation sandbox**, not a confidentiality boundary. The host root is readable and the real HOME is the read-only lower layer of the HOME overlay, so sandboxed processes can read files and secrets that your Unix account can read. See [SECURITY.md](SECURITY.md).
+> `agent-box` is primarily a **host write-isolation tool**, not a confidentiality boundary. Sandboxed programs can read files and credentials your Unix account can read. Network access is shared by default. Read the [security model](SECURITY.md) before using it with untrusted code.
 
-## Security requirement: Bubblewrap 0.12.0+
+## Why agent-box?
 
-`agent-box` refuses Bubblewrap versions older than **0.12.0**.
+Containers are excellent isolation tools, but they usually introduce a new filesystem layout and a second development environment. That is awkward when a project already depends on path-sensitive state such as:
 
-Bubblewrap versions before 0.12.0 are affected by `GHSA-pxhw-h44j-8pfx`, a high-severity sandbox-setup symlink traversal issue fixed in 0.12.0:
+~~~text
+/home/user/projects/app/.venv/bin/python
+~~~
 
-<https://github.com/containers/bubblewrap/security/advisories/GHSA-pxhw-h44j-8pfx>
+Inside `agent-box`, that path stays exactly the same. The repository's virtual environments, `node_modules`, Rust targets, build trees, and other local state continue to work without rebuilding an image.
 
-Check your environment before first use:
+| Capability | Default behavior |
+|---|---|
+| Host filesystem | Read-only |
+| Selected repository | Read/write at the same absolute path |
+| Home directory | Existing files readable; new writes disposable |
+| `/tmp` and `/run` | Private |
+| Network | Shared; disable with `--offline` |
+| Git safety snapshot | Enabled |
+| Git push | Blocked; enable with `--allow-git-push` |
+| Runtime footprint | Shell, Git, Bubblewrap, and Python's standard library only |
 
-```bash
-./scripts/check-system.sh
-```
+## Quick start
 
-## Requirements
+### 1. Install the requirements
 
-- Linux
-- Bash 4.4+
-- Bubblewrap >= 0.12.0
+- Linux with unprivileged user namespaces
+- Bash 4.4 or newer
+- Bubblewrap 0.12.0 or newer
 - Git 2.x
-- Python 3.9+
+- Python 3.9 or newer
 - `realpath`
-- Claude Code, optional and only needed using `--claude` to run Claude Code
 
-No third-party Python packages are required.
+Bubblewrap releases before 0.12.0 are rejected because they are affected by [GHSA-pxhw-h44j-8pfx](https://github.com/containers/bubblewrap/security/advisories/GHSA-pxhw-h44j-8pfx). See the [Bubblewrap installation guide](docs/installing-bubblewrap.md) if your distribution does not provide a new enough version.
+
+### 2. Clone and check the system
+
+~~~bash
+git clone https://github.com/abraxarion/agent-box.git
+cd agent-box
+./scripts/check-system.sh
+~~~
+
+### 3. Open a sandboxed shell
+
+~~~bash
+./agent-box ~/projects/my-project
+~~~
+
+The Bash prompt is marked with a box so it is easy to see when you are inside the sandbox. Start your preferred coding agent from that shell:
+
+~~~bash
+codex
+# or: claude
+# or: pi
+~~~
+
+To launch Claude Code directly:
+
+~~~bash
+./agent-box --claude ~/projects/my-project
+~~~
 
 ## Installation
 
-### Run from the checkout
+Running directly from the checkout is fully supported:
 
-```bash
-./agent-box ~/github/my-project
-```
+~~~bash
+./agent-box /path/to/repository
+~~~
 
-### Install for the current user
+To install for the current user:
 
-```bash
+~~~bash
 ./scripts/install.sh
-```
+~~~
 
-The default installation layout is:
+This creates:
 
-```text
-~/.local/bin/agent-box                  symlink
-~/.local/lib/agent-box/                 implementation
-```
+~~~text
+~/.local/bin/agent-box
+~/.local/lib/agent-box/
+~~~
 
-Make sure `~/.local/bin` is in `PATH`, then run:
+Ensure `~/.local/bin` is in `PATH`, then run `agent-box` from anywhere.
 
-```bash
-agent-box ~/github/my-project
-```
+Use a custom prefix when needed:
 
-### Install to another prefix
-
-```bash
+~~~bash
 PREFIX=/opt/agent-box ./scripts/install.sh
-```
+~~~
 
-The launcher is installed under `$PREFIX/bin` and its libraries under `$PREFIX/lib/agent-box`.
+## How it works
 
-## Command syntax
+~~~text
+HOST                                             SANDBOX
 
-```text
-agent-box [OPTIONS] [REPO]
+/                              ───────────────►  /             read-only
+$HOME                          ───────────────►  $HOME         disposable COW
+$REPOSITORY                    ───────────────►  same path     read/write
+host Git metadata snapshot     stays outside    host-side ZIP
+/tmp                                             private tmpfs
+/run                                             private tmpfs
+/proc                                            private procfs
+/dev                                             private device view
+~~~
 
-agent-box --claude [OPTIONS] [REPO] [-- CLAUDE_ARGS...]
-```
+The order of the mounts is part of the security design:
 
-`REPO` is optional. If omitted, the current working directory is used.
+1. Mount the host root read-only.
+2. Layer a disposable writable overlay over `$HOME`.
+3. Replace `/tmp` and `/run` with private filesystems.
+4. Bind the selected repository read/write after the private mounts.
+5. Install Git push guards unless explicitly disabled.
+6. Enter isolated PID, IPC, UTS, user, and cgroup namespaces.
+7. Share the network only when `--offline` is not set.
 
-When starting Claude Code with the `--claude` parameter then use the `--` separator before arguments that should be passed to Claude Code rather than interpreted by `agent-box`.
+The later repository bind punches through the HOME overlay and any private runtime mount at only the selected path. Repository writes therefore persist even when the project lives inside your home directory or below `/tmp`.
 
-```bash
-agent-box ~/github/my-project -- --model sonnet
-```
+### Git recovery snapshot
 
-When not starting with `--claude` then arguments after `--` are passed to the selected shell instead of Claude Code.
+Before opening the sandbox, `agent-box` creates an atomic ZIP containing Git metadata. For a repository at:
 
-## Command-line parameters
+~~~text
+/home/user/projects/app/
+~~~
 
-| Parameter | Default | Effect |
-|---|---|---|
-| `REPO` | current directory | Repository/directory exposed read/write at the same absolute path. It is canonicalized with `realpath` and must exist as a directory. |
-| `--git-save-disabled` | Git save enabled | Skip the pre-launch Git metadata ZIP. |
-| `--no-git-save` | Git save enabled | Alias for `--git-save-disabled`. |
-| `--allow-git-push` | push blocked | Do not install the Git push guards. Normal Git remote writes are then allowed according to your credentials/network access. |
-| `--offline` | network shared | Keep Bubblewrap's isolated network namespace instead of adding `--share-net`. External network access is therefore unavailable through the normal host network. |
-| `--disk-tmp` | private tmpfs `/tmp` | Use a private host-backed session directory for sandbox `/tmp`, useful for large builds that should not consume tmpfs RAM/swap. |
-| `--claude` | launch Claude Code |  Start the agent-box interactivly with Claude Code |
-| `--dry-run` | execute sandbox | Perform preflight, construct and print the Bubblewrap command, then stop before executing Bubblewrap. The Git snapshot still occurs unless disabled. |
-| `-h`, `--help` | — | Print CLI help and exit. |
-| `--version` | — | Print the installed `agent-box` version and exit. |
-| `-- CLAUDE_ARGS...` | none | Pass all remaining arguments verbatim to Claude Code, or to the shell when `--claude` is not provided. |
+the snapshot is written beside it:
 
-## Environment variables
+~~~text
+/home/user/projects/app.git-save-20260908-142530.zip
+~~~
 
-Set `$SHELL` (defaults to `/bin/bash` when `$SHELL` is unset) to launch inside the sandbox during start.
+The archive includes Git objects, refs, index data, logs, configuration, hooks, and linked-worktree metadata when applicable. It is created with mode `0600` because those files can contain sensitive remote URLs or local configuration. It does **not** include arbitrary untracked files or unstaged working-tree content.
 
+Use `--no-git-save` only when you deliberately do not want this recovery point.
 
-### Parameter interaction notes
+### Git push guard
 
-- `--dry-run` does **not** execute Bubblewrap and therefore does not require Bubblewrap or Claude Code to be available for the final launch step. Host preflight requirements such as Git, Python and `realpath` still apply.
-- `--offline` is stronger than the Git-specific push guard because it removes normal external network access entirely.
-- `--allow-git-push` only disables the Git wrapper/shadowing policy. It does not change the filesystem sandbox.
-- `--git-save-disabled` does not change Git access inside the sandbox; it only disables the host-side pre-launch snapshot.
-- `--disk-tmp` adds one temporary host write location in the user cache in addition to the selected repository. That directory is private to the session and removed on normal launcher exit.
+Local Git work remains available in a standard repository:
 
-## Usage examples
-
-### Start the sandbox interactively
-
-Start in the current directory
-```bash
-agent-box
-```
-
-Start in a mounted repository
-
-```bash
-agent-box ~/github/my-project
-```
-
-### Start Claude Code in a repository
-
-```bash
-agent-box --claude ~/github/my-project
-```
-
-### Use the current directory
-
-```bash
-cd ~/github/my-project
-agent-box --claude
-```
-
-### Forward Claude Code arguments
-
-```bash
-agent-box --claude ~/github/my-project -- --model sonnet
-```
-
-Everything after `--` is forwarded unchanged.
-
-### Inspect the sandbox interactively
-
-```bash
-agent-box ~/github/my-project
-```
-
-Useful checks inside the shell include:
-
-```bash
-pwd
-mount | head
-git config --global user.name
-git config --global user.email
-touch /tmp/agent-box-test
-```
-
-### Inspect the generated Bubblewrap command
-
-```bash
-agent-box --dry-run ~/github/my-project
-```
-
-To avoid creating a Git snapshot during inspection:
-
-```bash
-agent-box --dry-run --no-git-save ~/github/my-project
-```
-
-### Disable the automatic Git metadata snapshot
-
-```bash
-agent-box --git-save-disabled ~/github/my-project
-```
-
-or:
-
-```bash
-agent-box --no-git-save ~/github/my-project
-```
-
-### Allow `git push`
-
-```bash
-agent-box --allow-git-push ~/github/my-project
-```
-
-Use this only when you intentionally want the sandboxed agent/process to be able to write to remote Git repositories.
-
-### Disable external networking
-
-```bash
-agent-box --offline ~/github/my-project
-```
-
-A coding agent normally needs network access unless your setup reaches a model endpoint available from within the isolated namespace.
-
-### Use disk-backed temporary storage
-
-```bash
-agent-box --disk-tmp ~/github/my-project
-```
-
-This is useful for large C/C++ links, Rust builds, archives, model/tool downloads, or other workloads that may put substantial data in `/tmp`.
-
-## Mounting strategy
-
-Mount order is intentional and is part of the sandbox contract:
-
-```text
-1. --ro-bind / /
-2. --overlay-src "$HOME" --tmp-overlay "$HOME"
-3. --bind "$REPO" "$REPO"
-4. private /proc, /dev, /tmp, /run
-5. Git-policy mounts when push blocking is enabled
-```
-
-The later repository bind **punches through** the HOME overlay. This matters when the repository lives below HOME:
-
-```text
-/home/user/                         disposable HOME COW
-└── github/
-    └── my-project/                real host RW bind
-```
-
-That is why repo-local environments keep both their exact paths and normal persistence while unrelated HOME writes remain ephemeral.
-
-### Host root
-
-The base mount is:
-
-```bash
---ro-bind / /
-```
-
-Host binaries, libraries, system configuration and tools remain available at their normal paths, but ordinary filesystem writes through that view are denied.
-
-### Disposable HOME
-
-HOME is layered with:
-
-```bash
---overlay-src "$HOME"
---tmp-overlay "$HOME"
-```
-
-The real HOME is the lower layer. Reads fall through to it; writes land in a temporary upper layer and disappear when the sandbox exits.
-
-This means existing configuration is immediately available:
-
-```text
-~/.gitconfig
-~/.config/git/
-~/.claude/
-~/.cargo/
-~/.rustup/
-~/.npm/
-~/.local/
-...
-```
-
-For example:
-
-```bash
-git config --global user.name
-```
-
-sees your normal identity, while:
-
-```bash
-git config --global user.name "Temporary Sandbox Name"
-```
-
-changes only the disposable sandbox HOME. Your host `~/.gitconfig` remains unchanged.
-
-### Writable repository
-
-The selected repository is mounted after HOME:
-
-```bash
---bind "$REPO" "$REPO"
-```
-
-Therefore repository changes are real host changes and persist after the sandbox exits.
-
-### Private `/tmp`
-
-Default mode uses:
-
-```bash
---tmpfs /tmp
-```
-
-The agent can write normally to `/tmp`, but the host's real `/tmp` is hidden and sandbox temporary data disappears with the sandbox.
-
-With `--disk-tmp`, the launcher instead creates a mode-`0700` directory below:
-
-```text
-${XDG_CACHE_HOME:-$HOME/.cache}/agent-box/tmp/
-```
-
-and mounts that session directory:
-
-```bash
---bind "$SESSION_TMP" /tmp
-```
-
-The host's actual `/tmp` is still never shared. The session directory is removed on normal launcher exit, including non-zero Bubblewrap exits. Cleanup cannot run after `SIGKILL`, a kernel crash, or sudden power loss, so a stale cache directory can remain in those cases.
-
-### Private `/run`
-
-`/run` is replaced with a private tmpfs:
-
-```bash
---tmpfs /run
-```
-
-This avoids exposing host runtime sockets such as D-Bus, Docker/Podman sockets, SSH-agent sockets and similar host-control channels that commonly live below `/run`.
-
-## Git behavior
-
-### Existing Git identity works automatically
-
-Because the HOME overlay uses your real HOME as its lower layer, the sandbox sees your existing global Git configuration without asking for your name/email again.
-
-Useful verification:
-
-```bash
-git config --list --show-origin
-git config --global user.name
-git config --global user.email
-```
-
-Repository-local `.git/config` remains part of the read/write repository mount for a standard repository.
-
-> [!NOTE]
-> A linked Git worktree is different: its `.git` is a pointer file and its worktree/common Git metadata normally lives outside the selected worktree directory. The current sandbox does not add separate RW binds for those external metadata directories, so Git operations that need to update linked-worktree metadata may fail read-only. The pre-launch snapshot helper understands linked worktrees, but writable linked-worktree Git metadata is not yet a sandbox feature.
-
-### Automatic Git metadata ZIP
-
-Before Bubblewrap starts, the host launcher snapshots Git metadata unless saving is disabled.
-
-For:
-
-```text
-/home/user/github/project/
-```
-
-the archive is written to the parent directory with a timestamped name such as:
-
-```text
-/home/user/github/project.git-save-20260906-001530.zip
-```
-
-Creation is atomic: the snapshot helper writes a hidden temporary ZIP in the same directory, fsyncs it, and renames it to the final name only after successful completion. Snapshot failure aborts sandbox startup.
-
-A standard repository archive contains:
-
-```text
-manifest.json
-git-common/
-    HEAD
-    config
-    index
-    objects/
-    refs/
-    logs/
-    ...
-```
-
-Linked Git worktrees are detected. Their archive additionally preserves the worktree `.git` pointer file and records both the common and worktree-specific Git paths in `manifest.json`.
-
-The snapshot is **Git metadata only**. It does not preserve arbitrary untracked files or unstaged working-tree content that has never been stored in Git.
-
-### Git push is blocked by default
-
-When push protection is active, `agent-box`:
-
-1. creates temporary host-side copies of the Git policy executables;
-2. mounts a policy wrapper first in sandbox `PATH`;
-3. shadows the canonical Git executable with that wrapper;
-4. exposes the real Git executable only at a private sandbox path used by the wrapper;
-5. shadows a distinct `git-send-pack` helper when the platform provides one.
-
-For a standard repository whose Git metadata is inside the selected RW repository, normal local operations remain available:
-
-```bash
+~~~bash
 git status
 git diff
 git add .
-git commit -m "change"
+git commit
 git branch
-git checkout
 git merge
 git rebase
-git log
-```
+~~~
 
-But an ordinary:
+`git push`, `git send-pack`, and ordinary Git aliases that resolve to either command are rejected unless the sandbox starts with `--allow-git-push`.
 
-```bash
-git push
-```
+This guard prevents ordinary or accidental Git remote writes. It is not a firewall and does not stop a deliberately hostile process from invoking another Git executable or network client. Use `--offline` when the sandbox must have no normal external network access.
 
-is rejected.
+## Command-line reference
 
-This is a guard against normal/accidental Git remote writes, **not a general firewall**. With shared networking, a deliberately hostile program could use other network tooling or implement a remote protocol itself. Use `--offline` when all normal network egress must be denied.
+~~~text
+agent-box [OPTIONS] [REPO] [-- COMMAND_ARGS...]
+~~~
 
-## What persists after exit?
+`REPO` defaults to the current directory. Arguments after `--` are passed unchanged to the selected shell or to Claude Code.
 
-| Location/state | Persists? | Why |
+| Option | Default | Effect |
+|---|---|---|
+| `REPO` | Current directory | Project directory exposed read/write at its canonical absolute path. Broad paths that contain protected mounts are rejected. |
+| `--claude` | Interactive shell | Start Claude Code directly. |
+| `--git-save-disabled` | Snapshot enabled | Skip the pre-launch Git metadata ZIP. |
+| `--no-git-save` | Snapshot enabled | Alias for `--git-save-disabled`. |
+| `--allow-git-push` | Push blocked | Disable the Git push guard. |
+| `--offline` | Network shared | Keep Bubblewrap's isolated network namespace. |
+| `--disk-tmp` | Private tmpfs | Mount a private, host-backed session directory at `/tmp`. |
+| `--dry-run` | Launch | Run preflight and print the Bubblewrap command without executing it. |
+| `--version` | — | Print the version. |
+| `-h`, `--help` | — | Print help. |
+
+The default shell is `$SHELL`, falling back to `/bin/bash`.
+
+### Examples
+
+Open the current directory:
+
+~~~bash
+agent-box
+~~~
+
+Open a selected repository:
+
+~~~bash
+agent-box ~/projects/my-project
+~~~
+
+Run a command through the selected shell:
+
+~~~bash
+agent-box ~/projects/my-project -- -lc 'codex'
+~~~
+
+Forward arguments to Claude Code:
+
+~~~bash
+agent-box --claude ~/projects/my-project -- --model sonnet
+~~~
+
+Preview the generated Bubblewrap command without creating a snapshot:
+
+~~~bash
+agent-box --dry-run --no-git-save ~/projects/my-project
+~~~
+
+Use disk-backed temporary storage for large builds:
+
+~~~bash
+agent-box --disk-tmp ~/projects/my-project
+~~~
+
+Allow Git pushes:
+
+~~~bash
+agent-box --allow-git-push ~/projects/my-project
+~~~
+
+Disable normal external networking:
+
+~~~bash
+agent-box --offline ~/projects/my-project
+~~~
+
+## What persists?
+
+| Location or state | Persists? | Reason |
 |---|---:|---|
-| Files changed inside `$REPO` | Yes | Real host read/write bind mount. |
-| Standard-repo `.git` metadata changes | Yes | `.git` is inside the RW repository bind. |
-| Linked-worktree external Git metadata changes | Not necessarily | External worktree/common Git directories remain under the host RO view unless separately supported in a future mount policy. |
-| `$HOME` config/cache changes outside repo | No | Written to the disposable HOME overlay. |
-| Default `/tmp` contents | No | Private tmpfs. |
-| `--disk-tmp` contents | Normally no | Host session directory is deleted by launcher cleanup. |
-| `/run` contents | No | Private tmpfs. |
-| Pre-launch Git ZIP | Yes | Created by the host before sandbox execution. |
+| Files changed inside the selected repository | Yes | Real host read/write bind |
+| Standard-repository `.git` changes | Yes | Metadata is inside the repository bind |
+| Linked-worktree external Git metadata | Not necessarily | External Git directories remain read-only |
+| Writes elsewhere in `$HOME` | No | Disposable overlay |
+| Default `/tmp` and `/run` | No | Private tmpfs |
+| `--disk-tmp` contents | Normally no | Session directory is removed at exit |
+| Pre-launch Git snapshot | Yes | Created on the host before sandbox startup |
 
-## System check
+## Known limitations
 
-Run:
+- **Linux only.** The launcher depends on Bubblewrap and Linux namespaces.
+- **Not secret isolation.** Host-readable secrets remain readable.
+- **Network is all or nothing.** There is no domain or port allowlist.
+- **Linked worktrees are partially supported.** Snapshots include their metadata, but Git operations that must update external worktree metadata may fail read-only.
+- **Cleanup cannot survive everything.** A `--disk-tmp` directory can remain after `SIGKILL`, a kernel crash, or power loss.
+- **Git blocking is defense in depth.** It targets ordinary Git push paths, not arbitrary network protocols.
 
-```bash
-./scripts/check-system.sh
-```
-
-It checks:
-
-- Bash;
-- Python 3;
-- Git;
-- `realpath`;
-- Bubblewrap version >= 0.12.0;
-- Claude Code availability (warning only because `--claude` can not run without it).
+See [SECURITY.md](SECURITY.md) for the complete threat model.
 
 ## Troubleshooting
 
-### `Bubblewrap ... is too old`
+### Bubblewrap is missing or too old
 
-Install Bubblewrap `0.12.0` or newer from a trusted source. The launcher intentionally refuses older releases.
+Follow the [Bubblewrap installation guide](docs/installing-bubblewrap.md), then run:
 
-### `required command not found: claude`
+~~~bash
+./scripts/check-system.sh
+~~~
 
-Install Claude Code before using `--claude`.
-Or run interactive shell instead.
+### Claude Code is not installed
 
-```bash
-agent-box ~/github/my-project
-```
+Claude Code is required only with `--claude`. The default interactive shell works without it, and any available coding agent can be started from inside that shell.
 
-### Git snapshot failure prevents startup
+### A build fills `/tmp`
 
-That is intentional. The backup is a default safety preflight. Fix the filesystem/Git error or explicitly opt out:
+Restart with `--disk-tmp`. The host-backed temporary directory remains private to the session and is normally removed when the launcher exits.
 
-```bash
-agent-box --no-git-save ~/github/my-project
-```
+### Git operations fail in a linked worktree
 
-### A build runs out of space in `/tmp`
-
-Use disk-backed temporary storage:
-
-```bash
-agent-box --disk-tmp ~/github/my-project
-```
-
-### `git push` says it is disabled
-
-That is the default policy. If the push is intentional, restart with:
-
-```bash
-agent-box --allow-git-push ~/github/my-project
-```
-
-### A stale `--disk-tmp` directory remains
-
-This can happen after `SIGKILL`, machine failure, or another event that prevents the exit trap from running. Stale session directories live below:
-
-```text
-${XDG_CACHE_HOME:-$HOME/.cache}/agent-box/tmp/
-```
-
-Inspect them before removing them manually.
+The linked worktree's external Git metadata is outside the selected read/write bind. Use a standard checkout for full Git mutation support.
 
 ## Development
 
-The project intentionally uses a small dependency-free architecture: Bash for orchestration and Python stdlib only for robust ZIP creation.
+Run the test suite:
 
-Run the complete test suite:
-
-```bash
+~~~bash
 ./tests/run.sh
-```
+~~~
 
-Run syntax checks:
+Run static checks:
 
-```bash
+~~~bash
 bash -n agent-box lib/*.sh libexec/git-policy libexec/git-send-pack-block scripts/*.sh tests/*.sh
-python3 -m py_compile libexec/git-snapshot.py
-git diff --check
-```
+shellcheck -x agent-box lib/*.sh libexec/git-policy libexec/git-send-pack-block scripts/*.sh tests/*.sh
+PYTHONPYCACHEPREFIX=/tmp/agent-box-pycache python3 -m py_compile libexec/git-snapshot.py
+~~~
 
-The tests do not require a real Bubblewrap sandbox for most coverage. They verify deterministic argument construction, Git policy behavior, launcher orchestration and real temporary Git repositories/worktrees.
+Most tests use temporary repositories and fake Bubblewrap executables, so they do not require a live sandbox.
 
-For architecture and maintainer rules, see [AGENTS.md](AGENTS.md).
+Project layout:
 
-## Project layout
+~~~text
+agent-box                  launcher and orchestration
+lib/                       CLI, common helpers, Bubblewrap arguments
+libexec/                   Git snapshot and push-policy executables
+scripts/                   installation and system checks
+tests/                     shell-based regression suite
+docs/                      extended operator documentation
+assets/                    project artwork
+.github/                   CI, issue forms, and pull-request template
+AGENTS.md                  maintainer architecture contract
+SECURITY.md                threat model and reporting policy
+~~~
 
-```text
-agent-box/
-├── agent-box                      # main launcher / lifecycle orchestration
-├── lib/
-│   ├── common.sh                  # diagnostics, dependency/version helpers
-│   ├── cli.sh                     # CLI parsing and public help
-│   └── bwrap.sh                   # mount policy, temp lifecycle, bwrap args
-├── libexec/
-│   ├── git-snapshot.py            # atomic Git metadata ZIP preflight
-│   ├── git-policy                 # Git wrapper that rejects push/send-pack
-│   └── git-send-pack-block        # direct send-pack blocker
-├── scripts/
-│   ├── check-system.sh            # environment readiness check
-│   └── install.sh                 # prefix-based installer
-├── tests/                         # Bash integration/unit-style tests
-├── docs/superpowers/              # original design and implementation plan
-├── AGENTS.md                      # architecture and contributor/agent contract
-├── SECURITY.md                    # threat model and security limitations
-├── LICENSE
-└── README.md
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change. Security-sensitive changes should also follow the invariants in [AGENTS.md](AGENTS.md).
 
-## Security
+## Version
 
-Read [SECURITY.md](SECURITY.md) before treating the sandbox as a security boundary. In particular:
-
-- the sandbox can read host-readable files;
-- the selected repository is intentionally writable;
-- default networking is shared;
-- Git push blocking is Git-specific policy, not a general egress firewall;
-- `--offline` is the available hard network-denial mode;
-- `--disk-tmp` creates a narrowly scoped temporary host write exception.
+Current agent-box version is 0.1.1
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+agent-box is available under the [MIT License](LICENSE).

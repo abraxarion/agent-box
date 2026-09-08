@@ -11,7 +11,12 @@ cb_prepare_runtime_policy() {
     return 0
   fi
 
-  CB_RUNTIME_POLICY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/agent-box-policy.XXXXXX")"
+  # Host /tmp is hidden by the sandbox before the repository is rebound.
+  # Ignoring caller-controlled TMPDIR prevents policy files from being staged
+  # inside the writable repository through an inherited environment setting.
+  CB_RUNTIME_POLICY_DIR="$(mktemp -d /tmp/agent-box-policy.XXXXXX)" ||
+    cb_die "unable to create a private runtime policy directory"
+  chmod 0700 -- "$CB_RUNTIME_POLICY_DIR"
   cp -- "$policy_src" "$CB_RUNTIME_POLICY_DIR/git-policy"
   cp -- "$send_pack_src" "$CB_RUNTIME_POLICY_DIR/git-send-pack-block"
   chmod 0555 "$CB_RUNTIME_POLICY_DIR/git-policy" "$CB_RUNTIME_POLICY_DIR/git-send-pack-block"
@@ -33,7 +38,8 @@ cb_prepare_disk_tmp() {
   local cache_root base
   cache_root="${XDG_CACHE_HOME:-$HOME/.cache}"
   base="$cache_root/agent-box/tmp"
-  mkdir -p -m 0700 -- "$base"
+  mkdir -p -- "$base"
+  chmod 0700 -- "$base"
   CB_DISK_TMP_DIR="$(mktemp -d "$base/agent-box-tmp.XXXXXX")"
   chmod 0700 "$CB_DISK_TMP_DIR"
 }
@@ -55,9 +61,18 @@ cb_build_bwrap_args() {
     --ro-bind / /
     --overlay-src "$HOME"
     --tmp-overlay "$HOME"
-    --bind "$CB_REPO" "$CB_REPO"
     --proc /proc
     --dev /dev
+  )
+
+  # Mark the sandboxed shell prompt with a box icon. PROMPT_COMMAND
+  # re-applies the prefix after the shell's rc files, which usually
+  # overwrite PS1; the case guard keeps it idempotent.
+  # The inner shell, not this launcher, must expand PS1.
+  # shellcheck disable=SC2016
+  CB_BWRAP_ARGS+=(
+    --setenv PS1 '📦 \w\$ '
+    --setenv PROMPT_COMMAND 'case $PS1 in 📦*) ;; *) PS1="📦 ${PS1}";; esac'
   )
 
   if (( CB_DISK_TMP )); then
@@ -67,6 +82,10 @@ cb_build_bwrap_args() {
     CB_BWRAP_ARGS+=(--tmpfs /tmp)
   fi
   CB_BWRAP_ARGS+=(--tmpfs /run)
+
+  # This intentional final writable filesystem exception must follow the
+  # generic private mounts so repositories below /tmp or /run remain visible.
+  CB_BWRAP_ARGS+=(--bind "$CB_REPO" "$CB_REPO")
 
   if (( ! CB_ALLOW_GIT_PUSH )); then
     [[ -n "$CB_RUNTIME_POLICY_DIR" ]] || cb_die "runtime Git policy was not prepared"
@@ -98,18 +117,21 @@ cb_build_bwrap_args() {
   if (( ! CB_OFFLINE )); then
     CB_BWRAP_ARGS+=(--share-net)
   fi
+  # Deliberately no --new-session: a session created by setsid() cannot
+  # acquire the launcher's terminal as its controlling terminal, which
+  # disables job control in the inner shell and makes Ctrl+C kill the
+  # whole sandbox (via --die-with-parent) instead of the foreground job.
   CB_BWRAP_ARGS+=(
     --die-with-parent
-    --new-session
     --chdir "$CB_REPO"
     --
   )
 
   if (( CB_CLAUDE )); then
     CB_BWRAP_ARGS+=(claude)
-    CB_BWRAP_ARGS+=("${CB_CLAUDE_ARGS[@]}")
+    CB_BWRAP_ARGS+=("${CB_COMMAND_ARGS[@]}")
   else
     CB_BWRAP_ARGS+=("${SHELL:-/bin/bash}")
-    CB_BWRAP_ARGS+=("${CB_CLAUDE_ARGS[@]}")
+    CB_BWRAP_ARGS+=("${CB_COMMAND_ARGS[@]}")
   fi
 }

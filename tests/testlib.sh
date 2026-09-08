@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Values and helpers in this file are consumed by scripts that source it.
+# shellcheck disable=SC2034
 
 TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PASS_COUNT=0
-FAIL_COUNT=0
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2

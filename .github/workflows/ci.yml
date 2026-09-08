@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests and static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+
+      - name: Check shell syntax
+        run: bash -n agent-box lib/*.sh libexec/git-policy libexec/git-send-pack-block scripts/*.sh tests/*.sh
+
+      - name: Run ShellCheck
+        run: shellcheck -x agent-box lib/*.sh libexec/git-policy libexec/git-send-pack-block scripts/*.sh tests/*.sh
+
+      - name: Check Python syntax
+        env:
+          PYTHONPYCACHEPREFIX: /tmp/agent-box-pycache
+        run: python3 -m py_compile libexec/git-snapshot.py
+
+      - name: Run test suite
+        run: ./tests/run.sh
