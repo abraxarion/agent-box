@@ -21,7 +21,8 @@ CB_GIT_BIN="$(realpath "$(command -v git)")"
 CB_GIT_EXEC_PATH="$(git --exec-path)"
 
 if (( CB_GIT_SAVE )); then
-  snapshot="$($CB_ROOT/libexec/git-snapshot.py "$CB_REPO")" || cb_die "Git metadata snapshot failed; sandbox not started"
+  # snapshot="$($CB_ROOT/libexec/git-snapshot.py "$CB_REPO")" || cb_die "Git metadata snapshot failed; sandbox not started"
+  snapshot="$(python3 "$CB_ROOT/libexec/git-snapshot.py" "$CB_REPO")" || cb_die "Git metadata snapshot failed; sandbox not started"
   if [[ "$snapshot" == NO_GIT ]]; then
     cb_info "Git snapshot: not a Git repository"
   else

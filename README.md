@@ -341,7 +341,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change. Security-sensi
 
 ## Version
 
-Current agent-box version is 0.1.1
+Current agent-box version is 0.1.2
 
 ## License
 

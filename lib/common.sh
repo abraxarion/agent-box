@@ -3,7 +3,7 @@
 # Version state is consumed by scripts that source this file.
 # shellcheck disable=SC2034
 
-CB_VERSION="0.1.1"
+CB_VERSION="0.1.2"
 CB_MIN_BASH_VERSION="4.4"
 CB_MIN_GIT_VERSION="2.0"
 CB_MIN_PYTHON_VERSION="3.9"
