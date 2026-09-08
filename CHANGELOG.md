@@ -2,7 +2,7 @@
 
 All notable changes to agent-box are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use [Semantic Versioning](https://semver.org/).
 
-## Released
+## [0.1.2] - 2026-09-08
 
 - Released on [Github abraxarion repository](https://github.com/abraxarion/agent-box) on 2026-09-08.
 
@@ -24,6 +24,7 @@ All notable changes to agent-box are documented here. The format follows [Keep a
 - The repository bind follows private runtime mounts, preserving repositories below `/tmp`.
 - The system checker enforces the documented Bash, Python, Git, and Bubblewrap minimum versions.
 - Bubblewrap version detection preserves executable paths containing spaces.
+- Fixed GitHub Actions CI so the release workflow runs successfully and publishes the project.
 - Removed repository-local Claude workflow bundles and obsolete internal planning documents from the public package.
 
 ## [0.1.1] - 2026-09-06
@@ -47,6 +48,7 @@ All notable changes to agent-box are documented here. The format follows [Keep a
 - Default Git push guard and optional offline mode.
 - Bash integration tests and security documentation.
 
-[Unreleased]: https://github.com/abraxarion/agent-box/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/abraxarion/agent-box/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/abraxarion/agent-box/releases/tag/v0.1.2
 [0.1.1]: https://github.com/abraxarion/agent-box/releases/tag/v0.1.1
 [0.1.0]: https://github.com/abraxarion/agent-box/releases/tag/v0.1.0

@@ -14,7 +14,7 @@ body:
     attributes:
       label: agent-box version
       description: Run ./agent-box --version.
-      placeholder: agent-box 0.1.1
+      placeholder: agent-box 0.1.2
     validations:
       required: true
   - type: input
