@@ -27,6 +27,10 @@ All notable changes to agent-box are documented here. The format follows [Keep a
 - Fixed GitHub Actions CI so the release workflow runs successfully and publishes the project.
 - Removed repository-local Claude workflow bundles and obsolete internal planning documents from the public package.
 
+## [0.1.2] - 2026-09-08
+
+- GitHub CI error fix.
+
 ## [0.1.1] - 2026-09-06
 
 ### Added
